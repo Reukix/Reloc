@@ -11,6 +11,7 @@ struct MapPickerView: View {
     @State private var searchText = ""
     @State private var searchResults: [MKMapItem] = []
     @State private var isSearching = false
+    @FocusState private var isSearchFocused: Bool
     @State private var cameraTarget: CLLocationCoordinate2D?
     @State private var showManualCoordinate = false
     @State private var showPlacesSheet = false
@@ -33,6 +34,7 @@ struct MapPickerView: View {
                     mapSource: viewModel.mapSource,
                     cameraTarget: $cameraTarget,
                     onTapCoordinate: { coord in
+                        isSearchFocused = false
                         RelocTheme.hapticLight()
                         viewModel.selectLocationFromMap(coord)
                     }
@@ -48,6 +50,7 @@ struct MapPickerView: View {
                     isDarkMode: colorScheme == .dark,
                     cameraTarget: $cameraTarget,
                     onTapCoordinate: { coord in
+                        isSearchFocused = false
                         RelocTheme.hapticLight()
                         viewModel.selectLocationFromMap(coord)
                     }
@@ -56,17 +59,7 @@ struct MapPickerView: View {
             }
 
             VStack(spacing: 10) {
-                searchBar
-                if !searchResults.isEmpty {
-                    searchResultsList
-                }
-                topStatusRow
-
-                if let interrupted = viewModel.interruptedSession, !viewModel.snapshot.isRunning {
-                    interruptedRecoveryBanner(interrupted)
-                }
-
-                Spacer()
+                Spacer(minLength: 0)
 
                 HStack {
                     Spacer()
@@ -77,8 +70,24 @@ struct MapPickerView: View {
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 10)
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+
+            VStack(spacing: 10) {
+                searchBar
+                if !searchResults.isEmpty {
+                    searchResultsList
+                } else {
+                    topStatusRow
+
+                    if let interrupted = viewModel.interruptedSession, !viewModel.snapshot.isRunning {
+                        interruptedRecoveryBanner(interrupted)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
             .padding(.top, 8)
         }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .toolbarBackground(.hidden, for: .tabBar)
         .sheet(isPresented: $showManualCoordinate) {
             ManualCoordinateSheet(viewModel: viewModel) { coord in
@@ -114,32 +123,39 @@ struct MapPickerView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
+                .focused($isSearchFocused)
                 .onSubmit { performSearch() }
 
-            if isSearching {
-                ProgressView().controlSize(.small)
-            } else if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                    searchResults = []
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+            Group {
+                if isSearching {
+                    ProgressView().controlSize(.small)
+                } else if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                        searchResults = []
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Button {
+                        RelocTheme.hapticLight()
+                        isSearchFocused = false
+                        showManualCoordinate = true
+                    } label: {
+                        Image(systemName: "number.circle.fill")
+                            .font(.system(size: 19))
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel("手动输入坐标")
                 }
-            } else {
-                Button {
-                    RelocTheme.hapticLight()
-                    showManualCoordinate = true
-                } label: {
-                    Image(systemName: "number.circle.fill")
-                        .font(.system(size: 19))
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityLabel("手动输入坐标")
             }
+            .frame(width: 24, height: 24)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.vertical, 10)
+        .frame(minHeight: 44)
         .background(.regularMaterial, in: Capsule())
         .overlay(
             Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 0.7)
@@ -274,39 +290,52 @@ struct MapPickerView: View {
         }
     }
 
-    private var searchResultsList: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(searchResults.prefix(6).enumerated()), id: \.offset) { _, item in
-                    Button {
-                        RelocTheme.hapticLight()
-                        let coord = item.placemark.coordinate
-                        viewModel.selectSearchResultCoordinate(coord, name: item.name, address: item.placemark.title)
-                        cameraTarget = viewModel.pendingMapCoordinate ?? viewModel.activeMapCoordinate
-                        searchResults = []
-                        searchText = ""
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "mappin.circle.fill")
-                                .foregroundStyle(RelocTheme.accent)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.name ?? "未知地点")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                if let title = item.placemark.title {
-                                    Text(title)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
+    private var searchResultsContent: some View {
+        let items = Array(searchResults.prefix(6).enumerated())
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(items, id: \.offset) { index, item in
+                Button {
+                    RelocTheme.hapticLight()
+                    isSearchFocused = false
+                    let coord = item.placemark.coordinate
+                    viewModel.selectSearchResultCoordinate(coord, name: item.name, address: item.placemark.title)
+                    cameraTarget = viewModel.pendingMapCoordinate ?? viewModel.activeMapCoordinate
+                    searchResults = []
+                    searchText = ""
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "mappin.circle.fill")
+                            .foregroundStyle(RelocTheme.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.name ?? "未知地点")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            if let title = item.placemark.title {
+                                Text(title)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
                             }
-                            Spacer()
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        Spacer()
                     }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+                if index < items.count - 1 {
                     Divider().padding(.leading, 40)
                 }
+            }
+        }
+    }
+
+    private var searchResultsList: some View {
+        ViewThatFits(in: .vertical) {
+            searchResultsContent
+            ScrollView {
+                searchResultsContent
             }
         }
         .frame(maxHeight: 230)
@@ -647,6 +676,7 @@ struct MapPickerView: View {
     private func performSearch() {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        isSearchFocused = false
 
         let parts = trimmed.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         if parts.count == 2, let lat = Double(parts[0]), let lon = Double(parts[1]),
