@@ -203,6 +203,8 @@ public final class CredentialStore {
         static let duration = "reloc.duration"
         static let gcj02Correction = "reloc.gcj02Correction"
         static let backgroundKeepAlive = "reloc.backgroundKeepAlive"
+        static let backgroundRefresh = "reloc.backgroundRefresh"
+        static let backgroundRefreshReport = "reloc.backgroundRefreshReport"
         static let microJitter = "reloc.microJitter"
         static let appearance = "reloc.appearance"
         static let mapStyle = "reloc.mapStyle"
@@ -294,6 +296,27 @@ public final class CredentialStore {
             return defaults.bool(forKey: Keys.backgroundKeepAlive)
         }
         set { defaults.set(newValue, forKey: Keys.backgroundKeepAlive) }
+    }
+
+    var backgroundRefreshEnabled: Bool {
+        get { defaults.bool(forKey: Keys.backgroundRefresh) }
+        set { defaults.set(newValue, forKey: Keys.backgroundRefresh) }
+    }
+
+    var backgroundRefreshReport: BackgroundRefreshReport? {
+        get {
+            guard let data = defaults.data(forKey: Keys.backgroundRefreshReport) else { return nil }
+            return try? JSONDecoder().decode(BackgroundRefreshReport.self, from: data)
+        }
+        set {
+            guard let newValue else {
+                defaults.removeObject(forKey: Keys.backgroundRefreshReport)
+                return
+            }
+            if let data = try? JSONEncoder().encode(newValue) {
+                defaults.set(data, forKey: Keys.backgroundRefreshReport)
+            }
+        }
     }
 
     public var microJitterEnabled: Bool {

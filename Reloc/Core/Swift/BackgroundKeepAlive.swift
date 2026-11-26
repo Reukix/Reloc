@@ -3,13 +3,12 @@ import CoreLocation
 import Foundation
 import UIKit
 
-/// Keeps Reloc genuinely alive in the background while injecting coordinates over 10.7.0.1
-/// AND keeps `locationd` continuously subscribed (0xFFFA) to the external accessory GPS.
+/// Manages Core Location and optional audio while the current session is active.
 @MainActor
 public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
     private let locationManager = CLLocationManager()
-    private var backgroundActivitySession: AnyObject?
-    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    private var backgroundActivitySession: CLBackgroundActivitySession?
+    private var startupTaskID: UIBackgroundTaskIdentifier = .invalid
     private var audioPlayer: AVAudioPlayer?
     private var watchdogTimer: Timer?
     private var isActive = false
@@ -29,7 +28,7 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
         locationManager.pausesLocationUpdatesAutomatically = false
     }
 
-    /// Starts background keep-alive (audio + background task) WITHOUT waking internal GPS yet.
+    /// Starts optional audio and a bounded startup task without requesting GPS updates yet.
     /// Call `activateLocationSubscription()` right after iAP2 authentication (0xAA05) succeeds so
     /// `locationd` sees a fresh navigation consumer while the external MFi accessory is already ready.
     public func prepareForSession(useSilentAudio: Bool) {
@@ -39,7 +38,7 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
         lastAuthStatus = locationManager.authorizationStatus
         installObserversIfNeeded()
 
-        renewBackgroundTask()
+        beginStartupTask()
         startWatchdog()
 
         if useSilentAudio {
@@ -54,7 +53,6 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
     public func activateLocationSubscription(forceRestart: Bool = true) {
         guard isActive else { return }
         locationSubscriptionActive = true
-        renewBackgroundTask()
         startBackgroundLocation(forceRestart: forceRestart)
         if wantSilentAudio {
             startResilientAudioKeepAlive()
@@ -68,8 +66,6 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
         guard isActive else { return }
         locationSubscriptionActive = true
         locationManager.stopUpdatingLocation()
-        (backgroundActivitySession as? CLBackgroundActivitySession)?.invalidate()
-        backgroundActivitySession = nil
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self, self.isActive, self.locationSubscriptionActive else { return }
@@ -82,23 +78,15 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    public func start(useSilentAudio: Bool) {
-        isActive = true
-        locationSubscriptionActive = true
-        wantSilentAudio = useSilentAudio
-        lastAuthStatus = locationManager.authorizationStatus
-        installObserversIfNeeded()
-
-        renewBackgroundTask()
-        startBackgroundLocation(forceRestart: true)
-        startWatchdog()
-
-        if useSilentAudio {
+    public func setAudioKeepAliveEnabled(_ enabled: Bool) {
+        guard isActive else { return }
+        wantSilentAudio = enabled
+        if enabled {
             startResilientAudioKeepAlive()
         } else {
             stopAudioKeepAlive()
         }
-        emitStatus("keepalive_started")
+        emitStatus("keepalive_audio_changed")
     }
 
     public func stop() {
@@ -107,21 +95,14 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
         wantSilentAudio = false
         stopWatchdog()
 
-        locationManager.stopUpdatingLocation()
-        locationManager.allowsBackgroundLocationUpdates = false
-
-        (backgroundActivitySession as? CLBackgroundActivitySession)?.invalidate()
-        backgroundActivitySession = nil
-
+        stopBackgroundLocation()
         stopAudioKeepAlive()
-        endBackgroundTask()
+        endStartupTask()
     }
 
-    /// Call after global Location Services is toggled OFF -> ON (e.g. 0xFFFC -> 0xFFFA),
-    /// because turning Location Services off invalidates the previous CLBackgroundActivitySession.
+    /// Restart location updates after the system restores the subscription.
     public func refreshAfterLocationToggle() {
-        guard isActive else { return }
-        renewBackgroundTask()
+        guard isActive, locationSubscriptionActive else { return }
         startBackgroundLocation(forceRestart: true)
         if wantSilentAudio {
             startResilientAudioKeepAlive()
@@ -132,30 +113,40 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
     // MARK: - Background Location Keep-Alive
 
     private func startBackgroundLocation(forceRestart: Bool = false) {
+        let isForeground = UIApplication.shared.applicationState == .active
         let status = locationManager.authorizationStatus
         if status == .notDetermined {
-            locationManager.requestAlwaysAuthorization()
-        } else if status == .authorizedWhenInUse, !hasRequestedAlwaysUpgrade {
+            if isForeground { locationManager.requestAlwaysAuthorization() }
+            return
+        }
+        guard status == .authorizedWhenInUse || status == .authorizedAlways else {
+            stopBackgroundLocation()
+            return
+        }
+        if isForeground, status == .authorizedWhenInUse, !hasRequestedAlwaysUpgrade {
             hasRequestedAlwaysUpgrade = true
             locationManager.requestAlwaysAuthorization()
         }
 
-        if forceRestart {
-            locationManager.stopUpdatingLocation()
-            (backgroundActivitySession as? CLBackgroundActivitySession)?.invalidate()
-            backgroundActivitySession = nil
-        }
-
-        if backgroundActivitySession == nil {
+        // Create a session from the foreground and preserve it across location pulses.
+        if isForeground, backgroundActivitySession == nil {
             backgroundActivitySession = CLBackgroundActivitySession()
         }
+        guard status == .authorizedAlways || backgroundActivitySession != nil else { return }
+        if forceRestart { locationManager.stopUpdatingLocation() }
 
-        if status == .authorizedWhenInUse || status == .authorizedAlways {
-            locationManager.allowsBackgroundLocationUpdates = true
-            locationManager.pausesLocationUpdatesAutomatically = false
-            locationManager.showsBackgroundLocationIndicator = true
-            locationManager.startUpdatingLocation()
-        }
+        locationManager.allowsBackgroundLocationUpdates = true
+        locationManager.pausesLocationUpdatesAutomatically = false
+        locationManager.showsBackgroundLocationIndicator = true
+        locationManager.startUpdatingLocation()
+        endStartupTask()
+    }
+
+    private func stopBackgroundLocation() {
+        locationManager.stopUpdatingLocation()
+        locationManager.allowsBackgroundLocationUpdates = false
+        backgroundActivitySession?.invalidate()
+        backgroundActivitySession = nil
     }
 
     private func emitStatus(_ event: String) {
@@ -187,8 +178,7 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
             try session.setActive(true)
 
             // Use a 20 Hz sub-audible PCM waveform (+/-6 LSB) with volume = 0.5 -> +/-3 LSB (~ -81 dBFS):
-            // completely silent to humans and iPhone speakers, yet guaranteed non-zero after 16-bit mixing
-            // so iOS mediaserverd never suspends the app even while global Location Services is toggled.
+            // Keep the waveform below normal audible volume.
             let wavData = Self.makeInaudibleKeepAliveWAV(durationSeconds: 4, sampleRate: 8000)
             let player = try AVAudioPlayer(data: wavData)
             player.numberOfLoops = -1
@@ -209,20 +199,22 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
 
     // MARK: - Background Task & Interruption Recovery
 
-    private func renewBackgroundTask() {
-        endBackgroundTask()
-        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "Reloc.iAP2Session") { [weak self] in
-            Task { @MainActor in
-                self?.endBackgroundTask()
+    private func beginStartupTask() {
+        guard startupTaskID == .invalid else { return }
+        startupTaskID = UIApplication.shared.beginBackgroundTask(withName: "Reloc.SessionStartup") { [weak self] in
+            // UIKit calls the expiration handler synchronously on the main thread.
+            MainActor.assumeIsolated {
+                self?.endStartupTask()
+                self?.emitStatus("keepalive_startup_expired")
             }
         }
     }
 
-    private func endBackgroundTask() {
-        if backgroundTaskID != .invalid {
-            UIApplication.shared.endBackgroundTask(backgroundTaskID)
-            backgroundTaskID = .invalid
-        }
+    private func endStartupTask() {
+        guard startupTaskID != .invalid else { return }
+        let identifier = startupTaskID
+        startupTaskID = .invalid
+        UIApplication.shared.endBackgroundTask(identifier)
     }
 
     private func startWatchdog() {
@@ -298,7 +290,6 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
 
     @objc private func handleDidEnterBackground() {
         guard isActive else { return }
-        renewBackgroundTask()
         if locationSubscriptionActive {
             startBackgroundLocation()
         }

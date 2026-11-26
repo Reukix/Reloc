@@ -1,3 +1,4 @@
+import BackgroundTasks
 import Combine
 import CoreLocation
 import Foundation
@@ -13,8 +14,29 @@ public enum InjectionPhase: Equatable, Sendable {
     case activeConfirmed
 }
 
+struct BackgroundRefreshReport: Codable {
+    enum State: String, Codable {
+        case locationConfirmed
+        case awaitingLocation
+        case recoveryAvailable
+
+        var title: String {
+            switch self {
+            case .locationConfirmed: return "定位会话已确认"
+            case .awaitingLocation: return "等待系统确认定位"
+            case .recoveryAvailable: return "已保留位置，可手动恢复"
+            }
+        }
+    }
+
+    let date: Date
+    let state: State
+}
+
 @MainActor
 public final class RelocViewModel: ObservableObject {
+    static let backgroundRefreshTaskIdentifier = "dev.reloc.ios.session-refresh"
+
     public let store = CredentialStore()
     public let coreLocation = LiveCoreLocationMonitor()
     private let keepAlive = BackgroundKeepAlive()
@@ -55,11 +77,18 @@ public final class RelocViewModel: ObservableObject {
     @Published public var backgroundKeepAliveEnabled: Bool {
         didSet {
             store.backgroundKeepAliveEnabled = backgroundKeepAliveEnabled
-            if snapshot.isRunning {
-                keepAlive.start(useSilentAudio: backgroundKeepAliveEnabled)
-            }
+            keepAlive.setAudioKeepAliveEnabled(backgroundKeepAliveEnabled)
         }
     }
+    @Published var backgroundRefreshEnabled: Bool {
+        didSet {
+            store.backgroundRefreshEnabled = backgroundRefreshEnabled
+            updateBackgroundRefreshSchedule()
+        }
+    }
+    @Published private(set) var systemBackgroundRefreshStatus: UIBackgroundRefreshStatus = .denied
+    @Published private(set) var backgroundRefreshReport: BackgroundRefreshReport?
+    @Published private(set) var backgroundRefreshScheduleError: String?
     @Published public var microJitterEnabled: Bool {
         didSet {
             store.microJitterEnabled = microJitterEnabled
@@ -136,6 +165,7 @@ public final class RelocViewModel: ObservableObject {
     private var lastRestoreAuthStatus: CLAuthorizationStatus = .notDetermined
     private var geocodeTask: Task<Void, Never>?
     private var geocodeGeneration: Int = 0
+    private var hasEnteredForeground = false
 
     public init() {
         self.host = store.host
@@ -146,6 +176,8 @@ public final class RelocViewModel: ObservableObject {
         self.durationSeconds = store.durationSeconds
         self.gcj02CorrectionEnabled = store.gcj02CorrectionEnabled
         self.backgroundKeepAliveEnabled = store.backgroundKeepAliveEnabled
+        self.backgroundRefreshEnabled = store.backgroundRefreshEnabled
+        self.backgroundRefreshReport = store.backgroundRefreshReport
         self.microJitterEnabled = store.microJitterEnabled
         self.appearanceMode = store.appearanceMode
         self.mapStyle = store.mapStyle
@@ -195,8 +227,6 @@ public final class RelocViewModel: ObservableObject {
                 self?.handleCoreLocationAuthChangeForRestore(status)
             }
             .store(in: &cancellables)
-
-        reverseGeocode(wgsLocation: targetLocation)
     }
 
     // MARK: - Coordinate Mapping Helpers
@@ -515,10 +545,7 @@ public final class RelocViewModel: ObservableObject {
     // MARK: - Interrupted Session Recovery
 
     public func resumeInterruptedSession() {
-        guard let record = interruptedSession else { return }
-        interruptedSession = nil
-        store.saveInterruptedSession(nil)
-
+        guard let record = interruptedSession, !snapshot.isRunning else { return }
         targetLocation = TargetLocation(latitude: record.latitude, longitude: record.longitude, altitude: record.altitude)
         selectedPlaceName = record.placeName
         pendingLocation = nil
@@ -528,6 +555,8 @@ public final class RelocViewModel: ObservableObject {
     public func dismissInterruptedSession() {
         interruptedSession = nil
         store.saveInterruptedSession(nil)
+        clearBackgroundRefreshReport()
+        cancelBackgroundRefresh()
     }
 
     private func persistRecoveryRecord() {
@@ -538,6 +567,82 @@ public final class RelocViewModel: ObservableObject {
             altitude: targetLocation.altitude
         )
         store.saveInterruptedSession(rec)
+    }
+
+    // MARK: - Background App Refresh
+
+    func appDidBecomeActive() {
+        backgroundRefreshPolicyDidChange()
+        if !hasEnteredForeground {
+            hasEnteredForeground = true
+            reverseGeocode(wgsLocation: targetLocation)
+        }
+    }
+
+    func appDidEnterBackground() {
+        // A cold launch to deliver a refresh task should not queue another one.
+        guard hasEnteredForeground else { return }
+        updateBackgroundRefreshSchedule()
+    }
+
+    func backgroundRefreshPolicyDidChange() {
+        systemBackgroundRefreshStatus = UIApplication.shared.backgroundRefreshStatus
+        if systemBackgroundRefreshStatus != .available {
+            cancelBackgroundRefresh()
+        }
+    }
+
+    func updateBackgroundRefreshSchedule(earliestBeginDate: Date? = nil) {
+        systemBackgroundRefreshStatus = UIApplication.shared.backgroundRefreshStatus
+        guard backgroundRefreshEnabled, !isUnsupportedIPad,
+              systemBackgroundRefreshStatus == .available,
+              store.loadInterruptedSession() != nil else {
+            cancelBackgroundRefresh()
+            return
+        }
+
+        let request = BGAppRefreshTaskRequest(identifier: Self.backgroundRefreshTaskIdentifier)
+        request.earliestBeginDate = earliestBeginDate
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            backgroundRefreshScheduleError = nil
+        } catch {
+            backgroundRefreshScheduleError = error.localizedDescription
+        }
+    }
+
+    private func cancelBackgroundRefresh() {
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.backgroundRefreshTaskIdentifier)
+        backgroundRefreshScheduleError = nil
+    }
+
+    private func clearBackgroundRefreshReport() {
+        store.backgroundRefreshReport = nil
+        backgroundRefreshReport = nil
+    }
+
+    func performBackgroundRefresh() {
+        guard !Task.isCancelled, backgroundRefreshEnabled, !isUnsupportedIPad,
+              UIApplication.shared.backgroundRefreshStatus == .available,
+              store.loadInterruptedSession() != nil else { return }
+
+        let now = Date()
+        let state: BackgroundRefreshReport.State
+        if snapshot.isRunning {
+            let hasRecentLocation = coreLocation.latest.map { abs($0.timestamp.timeIntervalSince(now)) < 15 } ?? false
+            state = snapshot.authenticated && isAccessoryLocationConfirmed && hasRecentLocation
+                ? .locationConfirmed : .awaitingLocation
+        } else {
+            state = .recoveryAvailable
+        }
+
+        let report = BackgroundRefreshReport(date: now, state: state)
+        store.backgroundRefreshReport = report
+        backgroundRefreshReport = report
+
+        if snapshot.isRunning {
+            updateBackgroundRefreshSchedule(earliestBeginDate: report.date.addingTimeInterval(15 * 60))
+        }
     }
 
     // MARK: - Device Compatibility
@@ -686,6 +791,8 @@ public final class RelocViewModel: ObservableObject {
 
         recordRecent(name: selectedPlaceName, subtitle: selectedPlaceAddress, location: targetLocation)
         persistRecoveryRecord()
+        interruptedSession = nil
+        clearBackgroundRefreshReport()
         if microJitterEnabled {
             startJitterTimer()
         }
@@ -707,7 +814,7 @@ public final class RelocViewModel: ObservableObject {
         injectionPhase = .connecting
         cancelTriggerTasks()
 
-        // Start audio keep-alive ONLY before iAP2 auth completes so we don't wake internal GPS early
+        // Defer location updates until authentication completes so we don't wake internal GPS early
         // and poison `locationd`'s fusion cache with a fresh real location.
         keepAlive.prepareForSession(useSilentAudio: backgroundKeepAliveEnabled)
 
@@ -731,6 +838,8 @@ public final class RelocViewModel: ObservableObject {
                         self.cancelTriggerTasks()
                         self.stopJitterTimer()
                         self.keepAlive.stop()
+                        self.cancelBackgroundRefresh()
+                        self.interruptedSession = self.store.loadInterruptedSession()
                         if !self.isRestoringRealLocation {
                             self.coreLocation.stop()
                         }
@@ -772,6 +881,7 @@ public final class RelocViewModel: ObservableObject {
             discoveredRemotePort: discoveredDevicePort,
             mfiSigner: mfiSigner
         )
+        updateBackgroundRefreshSchedule()
     }
 
     public func stopAndRestore() {
@@ -786,8 +896,7 @@ public final class RelocViewModel: ObservableObject {
             isLocationRefreshGuideActive = false
             PairingPiPPresenter.shared.teardown()
         }
-        store.saveInterruptedSession(nil)
-        interruptedSession = nil
+        dismissInterruptedSession()
         beginRealLocationRecovery()
     }
 

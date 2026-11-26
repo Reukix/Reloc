@@ -1,14 +1,31 @@
+import Combine
 import SwiftUI
+import UIKit
 
 @main
 struct RelocApp: App {
     @StateObject private var viewModel = RelocViewModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
-        WindowGroup {
+        let viewModel = self.viewModel
+        return WindowGroup {
             ContentView(viewModel: viewModel)
                 .tint(RelocTheme.accent)
                 .preferredColorScheme(viewModel.appearanceMode.colorScheme)
+                .onChange(of: scenePhase, initial: true) { _, phase in
+                    if phase == .active {
+                        viewModel.appDidBecomeActive()
+                    } else if phase == .background {
+                        viewModel.appDidEnterBackground()
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.backgroundRefreshStatusDidChangeNotification)) { _ in
+                    viewModel.backgroundRefreshPolicyDidChange()
+                }
+        }
+        .backgroundTask(.appRefresh(RelocViewModel.backgroundRefreshTaskIdentifier)) {
+            await viewModel.performBackgroundRefresh()
         }
     }
 }

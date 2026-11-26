@@ -205,11 +205,45 @@ struct ConfigurationView: View {
 
                     Toggle(isOn: $viewModel.backgroundKeepAliveEnabled) {
                         Label {
-                            Text("后台保活（切换地图不断连）")
+                            Text("后台音频辅助")
                         } icon: {
                             SettingsIconBadge(systemName: "bolt.shield.fill", color: .teal)
                         }
                     }
+                }
+
+                Section {
+                    Toggle(isOn: $viewModel.backgroundRefreshEnabled) {
+                        Label {
+                            Text("后台刷新")
+                        } icon: {
+                            SettingsIconBadge(systemName: "arrow.clockwise", color: .teal)
+                        }
+                    }
+
+                    if viewModel.backgroundRefreshEnabled {
+                        if viewModel.systemBackgroundRefreshStatus != .available {
+                            Text("iOS 未允许后台 App 刷新，请前往系统设置检查。")
+                                .foregroundStyle(.secondary)
+                        } else if let error = viewModel.backgroundRefreshScheduleError {
+                            Text("无法安排刷新：\(error)")
+                                .foregroundStyle(RelocTheme.amber)
+                        }
+                        if let report = viewModel.backgroundRefreshReport {
+                            LabeledContent("上次刷新") {
+                                VStack(alignment: .trailing, spacing: 3) {
+                                    Text(report.date, format: .dateTime.month().day().hour().minute())
+                                    Text(report.state.title)
+                                        .font(.caption)
+                                }
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("后台运行")
+                } footer: {
+                    Text("iOS 自行安排短时刷新，更新会话状态。应用被终止后，重新打开 Reloc 并手动恢复定位。")
                 }
 
                 Section {
