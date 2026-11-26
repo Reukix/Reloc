@@ -22,9 +22,9 @@ struct BackgroundRefreshReport: Codable {
 
         var title: String {
             switch self {
-            case .locationConfirmed: return "定位会话已确认"
-            case .awaitingLocation: return "等待系统确认定位"
-            case .recoveryAvailable: return "已保留位置，可手动恢复"
+            case .locationConfirmed: return "已確認定位"
+            case .awaitingLocation: return "等待系統確認定位"
+            case .recoveryAvailable: return "已保留位置，可手動恢復"
             }
         }
     }

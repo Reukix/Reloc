@@ -81,7 +81,7 @@ targets:
           - _remotepairing-pairable-host._tcp
           - _remotepairing._tcp
         NSLocationWhenInUseUsageDescription: 定位注入期间用于保持 Reloc 在后台运行并触发系统定位服务订阅。
-        NSLocationAlwaysAndWhenInUseUsageDescription: 在定位会话期间，允许 Reloc 切到后台后继续接收系统定位更新。
+        NSLocationAlwaysAndWhenInUseUsageDescription: 在定位工作階段中，允許 Reloc 切到背景後繼續接收系統定位更新。
         BGTaskSchedulerPermittedIdentifiers:
           - dev.reloc.ios.session-refresh
         UIBackgroundModes:

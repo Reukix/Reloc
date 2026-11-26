@@ -205,7 +205,7 @@ struct ConfigurationView: View {
 
                     Toggle(isOn: $viewModel.backgroundKeepAliveEnabled) {
                         Label {
-                            Text("后台音频辅助")
+                            Text("背景音訊輔助")
                         } icon: {
                             SettingsIconBadge(systemName: "bolt.shield.fill", color: .teal)
                         }
@@ -215,7 +215,7 @@ struct ConfigurationView: View {
                 Section {
                     Toggle(isOn: $viewModel.backgroundRefreshEnabled) {
                         Label {
-                            Text("后台刷新")
+                            Text("背景重新整理")
                         } icon: {
                             SettingsIconBadge(systemName: "arrow.clockwise", color: .teal)
                         }
@@ -223,14 +223,14 @@ struct ConfigurationView: View {
 
                     if viewModel.backgroundRefreshEnabled {
                         if viewModel.systemBackgroundRefreshStatus != .available {
-                            Text("iOS 未允许后台 App 刷新，请前往系统设置检查。")
+                            Text("iOS 未允許背景 App 重新整理，請確認系統設定。")
                                 .foregroundStyle(.secondary)
                         } else if let error = viewModel.backgroundRefreshScheduleError {
-                            Text("无法安排刷新：\(error)")
+                            Text("無法安排背景重新整理：\(error)")
                                 .foregroundStyle(RelocTheme.amber)
                         }
                         if let report = viewModel.backgroundRefreshReport {
-                            LabeledContent("上次刷新") {
+                            LabeledContent("上次重新整理") {
                                 VStack(alignment: .trailing, spacing: 3) {
                                     Text(report.date, format: .dateTime.month().day().hour().minute())
                                     Text(report.state.title)
@@ -241,9 +241,9 @@ struct ConfigurationView: View {
                         }
                     }
                 } header: {
-                    Text("后台运行")
+                    Text("背景執行")
                 } footer: {
-                    Text("iOS 自行安排短时刷新，更新会话状态。应用被终止后，重新打开 Reloc 并手动恢复定位。")
+                    Text("iOS 會安排短暫的任務以更新工作階段狀態。App 若已被終止，請重新開啟 Reloc 並手動恢復定位。")
                 }
 
                 Section {
