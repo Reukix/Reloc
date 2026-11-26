@@ -1,4 +1,5 @@
 import CoreLocation
+import MapKit
 import SwiftUI
 import UIKit
 
@@ -12,10 +13,12 @@ struct WebMercatorMapView: UIViewRepresentable {
     let mapSource: MapSource
     @Binding var cameraTarget: CLLocationCoordinate2D?
     let onTapCoordinate: (CLLocationCoordinate2D) -> Void
+    var onRegionChange: ((MKCoordinateRegion) -> Void)? = nil
 
     func makeUIView(context: Context) -> WebMercatorCanvasView {
         let view = WebMercatorCanvasView(frame: .zero)
         view.onTapCoordinate = onTapCoordinate
+        view.onRegionChange = onRegionChange
         view.mapSource = mapSource
         view.setCenter(activeCoordinate, zoom: 15.0, animated: false)
         view.updatePins(active: activeCoordinate, isRunning: isSessionRunning, pending: pendingCoordinate)
@@ -24,6 +27,7 @@ struct WebMercatorMapView: UIViewRepresentable {
 
     func updateUIView(_ uiView: WebMercatorCanvasView, context: Context) {
         uiView.onTapCoordinate = onTapCoordinate
+        uiView.onRegionChange = onRegionChange
         if uiView.mapSource != mapSource {
             uiView.mapSource = mapSource
         }
@@ -78,6 +82,8 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
     }
 
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
+    var onRegionChange: ((MKCoordinateRegion) -> Void)?
+    private var hasReportedInitialRegion = false
     var mapSource: MapSource = .globalStreet {
         didSet {
             if oldValue != mapSource {
@@ -193,6 +199,37 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
         tileContainer.frame = bounds
         pinContainer.frame = bounds
         renderScene()
+        if !hasReportedInitialRegion, bounds.width > 1, bounds.height > 1 {
+            hasReportedInitialRegion = true
+            notifyRegionChanged()
+        }
+    }
+
+    var currentVisibleRegion: MKCoordinateRegion {
+        let center = WebMercatorProjection.toCoordinate(centerNorm)
+        guard bounds.width > 1, bounds.height > 1 else {
+            return MKCoordinateRegion(
+                center: center,
+                span: MKCoordinateSpan(latitudeDelta: 0.03, longitudeDelta: 0.03)
+            )
+        }
+        let worldPixels = 256.0 * pow(2.0, currentZoom)
+        let lonDelta = min(360.0, max(0.002, Double(bounds.width) / worldPixels * 360.0))
+        let topCoord = WebMercatorProjection.toCoordinate(normalized(forScreenPoint: CGPoint(x: bounds.midX, y: 0)))
+        let bottomCoord = WebMercatorProjection.toCoordinate(normalized(forScreenPoint: CGPoint(x: bounds.midX, y: bounds.height)))
+        let latDelta = min(170.0, max(0.002, abs(topCoord.latitude - bottomCoord.latitude)))
+        return MKCoordinateRegion(
+            center: center,
+            span: MKCoordinateSpan(latitudeDelta: latDelta, longitudeDelta: lonDelta)
+        )
+    }
+
+    private func notifyRegionChanged() {
+        guard let onRegionChange else { return }
+        let region = currentVisibleRegion
+        DispatchQueue.main.async {
+            onRegionChange(region)
+        }
     }
 
     func setCenter(_ coordinate: CLLocationCoordinate2D, zoom: Double, animated: Bool) {
@@ -204,6 +241,9 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
             centerNorm = targetNorm
             currentZoom = clampedZoom
             renderScene()
+            if !bounds.isEmpty {
+                notifyRegionChanged()
+            }
             return
         }
 
@@ -260,7 +300,11 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
                 velocityPixelsPerSec = vel
                 isCameraAnimating = false
                 startDisplayLink()
+            } else {
+                notifyRegionChanged()
             }
+        case .cancelled:
+            notifyRegionChanged()
         default:
             break
         }
@@ -284,6 +328,8 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
             let ny = pinchAnchorNorm.y - dy
             centerNorm = CGPoint(x: nx - floor(nx), y: min(0.999, max(0.001, ny)))
             renderScene()
+        case .ended, .cancelled:
+            notifyRegionChanged()
         default:
             break
         }
@@ -331,6 +377,7 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
             renderScene()
             if t >= 1.0 {
                 stopDisplayLink()
+                notifyRegionChanged()
             }
             return
         }
@@ -349,6 +396,7 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
 
         if hypot(velocityPixelsPerSec.x, velocityPixelsPerSec.y) < 18.0 {
             stopDisplayLink()
+            notifyRegionChanged()
         }
     }
 

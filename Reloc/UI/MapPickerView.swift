@@ -9,13 +9,38 @@ struct MapPickerView: View {
     @State private var searchText = ""
     @State private var searchResults: [MKMapItem] = []
     @State private var isSearching = false
+    @State private var searchStatusMessage: String?
     @State private var activeSearch: MKLocalSearch?
+    @StateObject private var searchCompleter = LocationSearchCompleter()
     @FocusState private var isSearchFocused: Bool
     @State private var cameraTarget: CLLocationCoordinate2D?
+    @State private var visibleMapRegion: MKCoordinateRegion?
     @State private var showManualCoordinate = false
     @State private var showPlacesSheet = false
     @State private var showStopConfirm = false
     @State private var copiedAddressToast = false
+
+    private var hasSearchDropdown: Bool {
+        !searchResults.isEmpty
+            || !searchCompleter.suggestions.isEmpty
+            || searchStatusMessage != nil
+    }
+
+    private var currentSearchRegion: MKCoordinateRegion {
+        if let region = visibleMapRegion {
+            if viewModel.mapSource.isPureWGS84,
+               viewModel.gcj02CorrectionEnabled,
+               !CoordinateTransform.isOutsideChina(lat: region.center.latitude, lon: region.center.longitude) {
+                let gcjCenter = CoordinateTransform.wgs84ToGCJ02(lat: region.center.latitude, lon: region.center.longitude)
+                return MKCoordinateRegion(center: gcjCenter, span: region.span)
+            }
+            return region
+        }
+        return MKCoordinateRegion(
+            center: viewModel.activeMapCoordinate,
+            span: MKCoordinateSpan(latitudeDelta: 0.04, longitudeDelta: 0.04)
+        )
+    }
 
     init(viewModel: RelocViewModel, switchToConfig: @escaping () -> Void) {
         self.viewModel = viewModel
@@ -32,9 +57,10 @@ struct MapPickerView: View {
                     mapSource: viewModel.mapSource,
                     cameraTarget: $cameraTarget,
                     onTapCoordinate: { coord in
-                        isSearchFocused = false
-                        RelocTheme.hapticLight()
-                        viewModel.selectLocationFromMap(coord)
+                        handleMapTap(coord)
+                    },
+                    onRegionChange: { region in
+                        visibleMapRegion = region
                     }
                 )
                 .ignoresSafeArea()
@@ -46,9 +72,10 @@ struct MapPickerView: View {
                     mapStyle: viewModel.mapStyle,
                     cameraTarget: $cameraTarget,
                     onTapCoordinate: { coord in
-                        isSearchFocused = false
-                        RelocTheme.hapticLight()
-                        viewModel.selectLocationFromMap(coord)
+                        handleMapTap(coord)
+                    },
+                    onRegionChange: { region in
+                        visibleMapRegion = region
                     }
                 )
                 .ignoresSafeArea()
@@ -70,8 +97,8 @@ struct MapPickerView: View {
 
             VStack(spacing: 10) {
                 searchBar
-                if !searchResults.isEmpty {
-                    searchResultsList
+                if hasSearchDropdown {
+                    searchDropdownCard
                 } else {
                     topStatusRow
 
@@ -85,6 +112,17 @@ struct MapPickerView: View {
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .toolbarBackground(.hidden, for: .tabBar)
+        .onChange(of: searchText) { _, newValue in
+            handleSearchTextChange(newValue)
+        }
+        .onChange(of: isSearchFocused) { _, focused in
+            if focused {
+                let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty, searchCompleter.suggestions.isEmpty, searchResults.isEmpty {
+                    handleSearchTextChange(trimmed)
+                }
+            }
+        }
         .sheet(isPresented: $showManualCoordinate) {
             ManualCoordinateSheet(viewModel: viewModel) { coord in
                 cameraTarget = coord
@@ -110,9 +148,20 @@ struct MapPickerView: View {
 
     private var searchBar: some View {
         HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(RelocTheme.accent)
+            Button {
+                if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    performSearch()
+                } else {
+                    isSearchFocused = true
+                }
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(RelocTheme.accent)
+                    .frame(width: 24, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
             TextField("搜索地点或输入 纬度, 经度", text: $searchText)
                 .font(.subheadline)
@@ -121,43 +170,55 @@ struct MapPickerView: View {
                 .submitLabel(.search)
                 .focused($isSearchFocused)
                 .onSubmit { performSearch() }
+                .frame(maxWidth: .infinity, minHeight: 44)
 
             Group {
                 if isSearching {
                     ProgressView().controlSize(.small)
                 } else if !searchText.isEmpty {
                     Button {
-                        activeSearch?.cancel()
-                        activeSearch = nil
-                        isSearching = false
-                        searchText = ""
-                        searchResults = []
+                        clearSearch()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 18))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(uiColor: .secondaryLabel))
+                            .frame(width: 28, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("清空搜索")
                 } else {
                     Button {
                         RelocTheme.hapticLight()
-                        isSearchFocused = false
+                        dismissSearchOverlay()
                         showManualCoordinate = true
                     } label: {
                         Image(systemName: "number.circle.fill")
                             .font(.system(size: 19))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color(uiColor: .secondaryLabel))
+                            .frame(width: 28, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .accessibilityLabel("手动输入坐标")
                 }
             }
-            .frame(width: 24, height: 24)
+            .frame(width: 28, height: 44)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
         .frame(minHeight: 44)
-        .background(.regularMaterial, in: Capsule())
+        .background {
+            Capsule()
+                .fill(.regularMaterial)
+                .contentShape(Capsule())
+                .onTapGesture {
+                    isSearchFocused = true
+                }
+        }
         .overlay(
-            Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 0.7)
+            Capsule()
+                .strokeBorder(Color.white.opacity(0.28), lineWidth: 0.7)
+                .allowsHitTesting(false)
         )
         .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
     }
@@ -172,10 +233,10 @@ struct MapPickerView: View {
                     )
                     Text(statusPillTitle)
                         .font(.caption.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Color.primary)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.secondary)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
@@ -185,6 +246,7 @@ struct MapPickerView: View {
                 )
                 .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
             }
+            .buttonStyle(.plain)
 
             Spacer()
 
@@ -239,12 +301,13 @@ struct MapPickerView: View {
             } label: {
                 Image(systemName: "map.fill")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Color.primary)
                     .frame(width: 42, height: 42)
                     .background(.regularMaterial, in: Circle())
                     .overlay(Circle().strokeBorder(Color.white.opacity(0.22), lineWidth: 0.7))
                     .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
             }
+            .tint(.primary)
 
             MapHUDIconButton(systemName: viewModel.snapshot.isRunning ? "scope" : "location.fill") {
                 if !viewModel.snapshot.isRunning, let real = viewModel.coreLocation.latest {
@@ -289,31 +352,70 @@ struct MapPickerView: View {
         }
     }
 
+    private var searchCompletionsContent: some View {
+        let items = Array(searchCompleter.suggestions.prefix(6).enumerated())
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(items, id: \.element.id) { index, suggestion in
+                Button {
+                    selectSuggestion(suggestion)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: suggestion.isDirectMapItem ? "mappin.circle.fill" : "magnifyingglass")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(suggestion.isDirectMapItem ? RelocTheme.accent : Color(uiColor: .secondaryLabel))
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(suggestion.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color(uiColor: .label))
+                                .lineLimit(1)
+                            if let subtitle = suggestion.subtitle {
+                                Text(subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(Color(uiColor: .secondaryLabel))
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: "arrow.up.left")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if index < items.count - 1 {
+                    Rectangle()
+                        .fill(Color(uiColor: .separator).opacity(0.45))
+                        .frame(height: 0.5)
+                        .padding(.leading, 44)
+                }
+            }
+        }
+    }
+
     private var searchResultsContent: some View {
         let items = Array(searchResults.prefix(6).enumerated())
         return VStack(alignment: .leading, spacing: 0) {
             ForEach(items, id: \.offset) { index, item in
                 Button {
-                    RelocTheme.hapticLight()
-                    isSearchFocused = false
-                    let coord = item.placemark.coordinate
-                    viewModel.selectSearchResultCoordinate(coord, name: item.name, address: item.placemark.title)
-                    cameraTarget = viewModel.pendingMapCoordinate ?? viewModel.activeMapCoordinate
-                    searchResults = []
-                    searchText = ""
+                    applyMapItemSelection(item)
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "mappin.circle.fill")
                             .foregroundStyle(RelocTheme.accent)
+                            .frame(width: 20)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.name ?? "未知地点")
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
+                                .foregroundStyle(Color(uiColor: .label))
                                 .lineLimit(1)
-                            if let title = item.placemark.title {
-                                Text(title)
+                            if let subtitle = Self.formattedAddress(for: item) {
+                                Text(subtitle)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(Color(uiColor: .secondaryLabel))
                                     .lineLimit(1)
                             }
                         }
@@ -323,23 +425,61 @@ struct MapPickerView: View {
                     .padding(.vertical, 10)
                     .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 if index < items.count - 1 {
-                    Divider().padding(.leading, 40)
+                    Rectangle()
+                        .fill(Color(uiColor: .separator).opacity(0.45))
+                        .frame(height: 0.5)
+                        .padding(.leading, 44)
                 }
             }
         }
     }
 
-    private var searchResultsList: some View {
-        ViewThatFits(in: .vertical) {
-            searchResultsContent
-            ScrollView {
-                searchResultsContent
+    @ViewBuilder
+    private var searchDropdownCard: some View {
+        Group {
+            if !searchResults.isEmpty {
+                ViewThatFits(in: .vertical) {
+                    searchResultsContent
+                    ScrollView {
+                        searchResultsContent
+                    }
+                }
+                .frame(maxHeight: 240)
+            } else if !searchCompleter.suggestions.isEmpty {
+                ViewThatFits(in: .vertical) {
+                    searchCompletionsContent
+                    ScrollView {
+                        searchCompletionsContent
+                    }
+                }
+                .frame(maxHeight: 240)
+            } else if let message = searchStatusMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color(uiColor: .secondaryLabel))
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(Color(uiColor: .secondaryLabel))
+                    Spacer()
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
             }
         }
-        .frame(maxHeight: 230)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.24), lineWidth: 0.7))
+        .background {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.regularMaterial)
+                .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .onTapGesture {}
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.24), lineWidth: 0.7)
+                .allowsHitTesting(false)
+        )
         .shadow(color: .black.opacity(0.14), radius: 12, y: 6)
     }
 
@@ -371,8 +511,9 @@ struct MapPickerView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
             }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
@@ -551,6 +692,12 @@ struct MapPickerView: View {
             }
         }
         .relocGlassCard(cornerRadius: 24, padding: 15)
+        .background {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Color.clear)
+                .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .onTapGesture {}
+        }
     }
 
     @ViewBuilder
@@ -693,15 +840,154 @@ struct MapPickerView: View {
 
     // MARK: - Search Action
 
+    private func handleMapTap(_ coord: CLLocationCoordinate2D) {
+        if isSearchFocused || hasSearchDropdown {
+            dismissSearchOverlay()
+            return
+        }
+        RelocTheme.hapticLight()
+        viewModel.selectLocationFromMap(coord)
+    }
+
+    private func clearSearch() {
+        activeSearch?.cancel()
+        activeSearch = nil
+        isSearching = false
+        searchText = ""
+        searchResults = []
+        searchStatusMessage = nil
+        searchCompleter.clear()
+    }
+
+    private func dismissSearchOverlay() {
+        isSearchFocused = false
+        searchStatusMessage = nil
+        searchResults = []
+        searchCompleter.clear()
+    }
+
+    static func formattedAddress(for item: MKMapItem) -> String? {
+        if let title = item.placemark.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !title.isEmpty, title != item.name {
+            return title
+        }
+        let parts = [
+            item.placemark.administrativeArea,
+            item.placemark.locality,
+            item.placemark.subLocality,
+            item.placemark.thoroughfare,
+            item.placemark.subThoroughfare
+        ]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+        if !parts.isEmpty {
+            return parts.joined(separator: " ")
+        }
+        let coord = item.placemark.coordinate
+        return String(format: "%.5f, %.5f", coord.latitude, coord.longitude)
+    }
+
+    private func searchErrorDescription(for error: Error?) -> String {
+        if let mkError = error as? MKError {
+            switch mkError.code {
+            case .placemarkNotFound:
+                return "未找到匹配地点，可尝试换个关键词"
+            case .loadingThrottled:
+                return "搜索过于频繁，请稍后再试"
+            default:
+                return "搜索失败，请检查网络连接"
+            }
+        }
+        return error != nil ? "搜索失败，请检查网络连接" : "未找到匹配地点，可尝试换个关键词"
+    }
+
+    private func parseCoordinatePair(_ input: String) -> (lat: Double, lon: Double)? {
+        let normalized = input.replacingOccurrences(of: "，", with: ",")
+        let parts = normalized.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2,
+              let lat = Double(parts[0]), let lon = Double(parts[1]),
+              lat.isFinite, lon.isFinite,
+              (-90.0...90.0).contains(lat), (-180.0...180.0).contains(lon) else {
+            return nil
+        }
+        return (lat, lon)
+    }
+
+    private func handleSearchTextChange(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        searchStatusMessage = nil
+        if !searchResults.isEmpty {
+            searchResults = []
+        }
+        guard !trimmed.isEmpty, parseCoordinatePair(trimmed) == nil else {
+            searchCompleter.clear()
+            return
+        }
+        searchCompleter.update(query: trimmed, region: currentSearchRegion)
+    }
+
+    private func applyMapItemSelection(_ item: MKMapItem) {
+        RelocTheme.hapticLight()
+        isSearchFocused = false
+        activeSearch?.cancel()
+        activeSearch = nil
+        isSearching = false
+        searchStatusMessage = nil
+        searchCompleter.clear()
+        let coord = item.placemark.coordinate
+        viewModel.selectSearchResultCoordinate(coord, name: item.name, address: item.placemark.title)
+        cameraTarget = viewModel.pendingMapCoordinate ?? viewModel.activeMapCoordinate
+        searchResults = []
+        searchText = ""
+    }
+
+    private func selectSuggestion(_ suggestion: LocationSearchSuggestion) {
+        switch suggestion {
+        case .mapItem(let item, _):
+            applyMapItemSelection(item)
+        case .completion(let completion, _):
+            selectCompletion(completion)
+        }
+    }
+
+    private func selectCompletion(_ completion: MKLocalSearchCompletion) {
+        RelocTheme.hapticLight()
+        isSearchFocused = false
+        activeSearch?.cancel()
+        isSearching = true
+        searchStatusMessage = nil
+        searchResults = []
+        searchCompleter.clear()
+
+        let req = MKLocalSearch.Request(completion: completion)
+        let search = MKLocalSearch(request: req)
+        activeSearch = search
+        search.start { response, error in
+            Task { @MainActor in
+                guard activeSearch === search else { return }
+                activeSearch = nil
+                isSearching = false
+                let items = response?.mapItems ?? []
+                if let first = items.first, items.count == 1 || !completion.subtitle.isEmpty {
+                    applyMapItemSelection(first)
+                } else if !items.isEmpty {
+                    searchResults = items
+                } else {
+                    searchStatusMessage = searchErrorDescription(for: error)
+                }
+            }
+        }
+    }
+
     private func performSearch() {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         isSearchFocused = false
+        searchStatusMessage = nil
+        searchCompleter.clear()
 
-        let parts = trimmed.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-        if parts.count == 2, let lat = Double(parts[0]), let lon = Double(parts[1]),
-           (-90.0...90.0).contains(lat), (-180.0...180.0).contains(lon) {
-            viewModel.selectWGSLocation(TargetLocation(latitude: lat, longitude: lon, altitude: viewModel.targetLocation.altitude))
+        if let coord = parseCoordinatePair(trimmed) {
+            viewModel.selectWGSLocation(TargetLocation(latitude: coord.lat, longitude: coord.lon, altitude: viewModel.targetLocation.altitude))
             cameraTarget = viewModel.pendingMapCoordinate ?? viewModel.activeMapCoordinate
             searchResults = []
             searchText = ""
@@ -712,15 +998,176 @@ struct MapPickerView: View {
         isSearching = true
         let req = MKLocalSearch.Request()
         req.naturalLanguageQuery = trimmed
+        req.region = currentSearchRegion
         let search = MKLocalSearch(request: req)
         activeSearch = search
-        search.start { response, _ in
+        search.start { response, error in
             Task { @MainActor in
                 guard activeSearch === search else { return }
                 activeSearch = nil
                 isSearching = false
-                searchResults = response?.mapItems ?? []
+                let items = response?.mapItems ?? []
+                searchResults = items
+                if items.isEmpty {
+                    searchStatusMessage = searchErrorDescription(for: error)
+                }
             }
+        }
+    }
+}
+
+// MARK: - Live Viewport-Scoped Location Search Completer
+
+private enum LocationSearchSuggestion: Identifiable {
+    case completion(MKLocalSearchCompletion, Int)
+    case mapItem(MKMapItem, Int)
+
+    var id: String {
+        switch self {
+        case .completion(let c, let idx):
+            return "c-\(idx)-\(c.title)-\(c.subtitle)"
+        case .mapItem(let m, let idx):
+            let coord = m.placemark.coordinate
+            return "m-\(idx)-\(m.name ?? "")-\(coord.latitude)-\(coord.longitude)"
+        }
+    }
+
+    var isDirectMapItem: Bool {
+        if case .mapItem = self { return true }
+        return false
+    }
+
+    var title: String {
+        switch self {
+        case .completion(let c, _): return c.title
+        case .mapItem(let m, _): return m.name ?? "未知地点"
+        }
+    }
+
+    var subtitle: String? {
+        switch self {
+        case .completion(let c, _):
+            let trimmed = c.subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        case .mapItem(let m, _):
+            return MapPickerView.formattedAddress(for: m)
+        }
+    }
+}
+
+@MainActor
+private final class LocationSearchCompleter: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
+    @Published private(set) var suggestions: [LocationSearchSuggestion] = []
+
+    private let completer = MKLocalSearchCompleter()
+    private var debounceTask: Task<Void, Never>?
+    private var fallbackTask: Task<Void, Never>?
+    private var fallbackSearch: MKLocalSearch?
+    private var activeQuery = ""
+    private var activeRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 37.334606, longitude: -122.009102),
+        span: MKCoordinateSpan(latitudeDelta: 0.04, longitudeDelta: 0.04)
+    )
+    private var completerRespondedForActiveQuery = false
+
+    override init() {
+        super.init()
+        completer.delegate = self
+        completer.resultTypes = [.address, .pointOfInterest]
+    }
+
+    func update(query: String, region: MKCoordinateRegion) {
+        debounceTask?.cancel()
+        fallbackTask?.cancel()
+        fallbackSearch?.cancel()
+        fallbackSearch = nil
+
+        activeQuery = query
+        activeRegion = region
+        completerRespondedForActiveQuery = false
+
+        debounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled, let self, self.activeQuery == query else { return }
+            self.completer.region = region
+            self.completer.queryFragment = query
+            self.scheduleFallbackSearch(for: query, region: region, delayNanoseconds: 420_000_000)
+        }
+    }
+
+    func clear() {
+        debounceTask?.cancel()
+        debounceTask = nil
+        fallbackTask?.cancel()
+        fallbackTask = nil
+        fallbackSearch?.cancel()
+        fallbackSearch = nil
+        activeQuery = ""
+        completerRespondedForActiveQuery = false
+        if !completer.queryFragment.isEmpty {
+            completer.queryFragment = ""
+        }
+        if !suggestions.isEmpty {
+            suggestions = []
+        }
+    }
+
+    private func scheduleFallbackSearch(for query: String, region: MKCoordinateRegion, delayNanoseconds: UInt64) {
+        fallbackTask?.cancel()
+        fallbackTask = Task { [weak self] in
+            if delayNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: delayNanoseconds)
+            }
+            guard !Task.isCancelled, let self, self.activeQuery == query else { return }
+            if self.completerRespondedForActiveQuery && !self.suggestions.isEmpty {
+                return
+            }
+            self.runFallbackLocalSearch(query: query, region: region)
+        }
+    }
+
+    private func runFallbackLocalSearch(query: String, region: MKCoordinateRegion) {
+        fallbackSearch?.cancel()
+        let req = MKLocalSearch.Request()
+        req.naturalLanguageQuery = query
+        req.region = region
+        let search = MKLocalSearch(request: req)
+        fallbackSearch = search
+        search.start { [weak self] response, _ in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.fallbackSearch === search,
+                      self.activeQuery == query else { return }
+                self.fallbackSearch = nil
+                guard !(self.completerRespondedForActiveQuery && !self.suggestions.isEmpty) else { return }
+                let items = response?.mapItems ?? []
+                self.suggestions = items.prefix(6).enumerated().map { .mapItem($1, $0) }
+            }
+        }
+    }
+
+    nonisolated func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        let results = completer.results
+        let fragment = completer.queryFragment
+        Task { @MainActor [weak self] in
+            guard let self, !self.activeQuery.isEmpty, fragment == self.activeQuery else { return }
+            if !results.isEmpty {
+                self.completerRespondedForActiveQuery = true
+                self.fallbackTask?.cancel()
+                self.fallbackSearch?.cancel()
+                self.fallbackSearch = nil
+                self.suggestions = results.prefix(6).enumerated().map { .completion($1, $0) }
+            } else {
+                self.scheduleFallbackSearch(for: self.activeQuery, region: self.activeRegion, delayNanoseconds: 0)
+            }
+        }
+    }
+
+    nonisolated func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        let fragment = completer.queryFragment
+        Task { @MainActor [weak self] in
+            guard let self, !self.activeQuery.isEmpty, fragment == self.activeQuery else { return }
+            self.scheduleFallbackSearch(for: self.activeQuery, region: self.activeRegion, delayNanoseconds: 0)
         }
     }
 }
@@ -734,9 +1181,10 @@ private struct InteractiveMKMapView: UIViewRepresentable {
     let mapStyle: MapDisplayStyle
     @Binding var cameraTarget: CLLocationCoordinate2D?
     let onTapCoordinate: (CLLocationCoordinate2D) -> Void
+    var onRegionChange: ((MKCoordinateRegion) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onTapCoordinate: onTapCoordinate)
+        Coordinator(onTapCoordinate: onTapCoordinate, onRegionChange: onRegionChange)
     }
 
     func makeUIView(context: Context) -> MKMapView {
@@ -761,11 +1209,17 @@ private struct InteractiveMKMapView: UIViewRepresentable {
             span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
         )
         mapView.setRegion(region, animated: false)
+        if let onRegionChange {
+            DispatchQueue.main.async {
+                onRegionChange(region)
+            }
+        }
         return mapView
     }
 
     func updateUIView(_ uiView: MKMapView, context: Context) {
         context.coordinator.onTapCoordinate = onTapCoordinate
+        context.coordinator.onRegionChange = onRegionChange
         context.coordinator.isSessionRunning = isSessionRunning
 
         applyMapStyle(to: uiView)
@@ -828,12 +1282,17 @@ private struct InteractiveMKMapView: UIViewRepresentable {
 
     final class Coordinator: NSObject, MKMapViewDelegate {
         var onTapCoordinate: (CLLocationCoordinate2D) -> Void
+        var onRegionChange: ((MKCoordinateRegion) -> Void)?
         var isSessionRunning = false
         var activeAnnotation: TaggedAnnotation?
         var pendingAnnotation: TaggedAnnotation?
 
-        init(onTapCoordinate: @escaping (CLLocationCoordinate2D) -> Void) {
+        init(
+            onTapCoordinate: @escaping (CLLocationCoordinate2D) -> Void,
+            onRegionChange: ((MKCoordinateRegion) -> Void)?
+        ) {
             self.onTapCoordinate = onTapCoordinate
+            self.onRegionChange = onRegionChange
         }
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -841,6 +1300,13 @@ private struct InteractiveMKMapView: UIViewRepresentable {
             let point = gesture.location(in: mapView)
             let coord = mapView.convert(point, toCoordinateFrom: mapView)
             onTapCoordinate(coord)
+        }
+
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            let region = mapView.region
+            DispatchQueue.main.async { [weak self] in
+                self?.onRegionChange?(region)
+            }
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
