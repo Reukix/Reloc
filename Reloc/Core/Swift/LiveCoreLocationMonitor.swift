@@ -18,8 +18,14 @@ public final class LiveCoreLocationMonitor: NSObject, ObservableObject, CLLocati
     @Published public private(set) var latest: LiveLocationTelemetry?
     @Published public private(set) var isMonitoring = false
     @Published public private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    @Published public private(set) var accuracyAuthorization: CLAccuracyAuthorization = .fullAccuracy
 
     private let manager = CLLocationManager()
+
+    public var isReducedAccuracy: Bool {
+        (authorizationStatus == .authorizedAlways || authorizationStatus == .authorizedWhenInUse)
+            && accuracyAuthorization == .reducedAccuracy
+    }
 
     public override init() {
         super.init()
@@ -29,29 +35,51 @@ public final class LiveCoreLocationMonitor: NSObject, ObservableObject, CLLocati
         manager.activityType = .otherNavigation
         manager.pausesLocationUpdatesAutomatically = false
         authorizationStatus = manager.authorizationStatus
+        accuracyAuthorization = manager.accuracyAuthorization
     }
 
     public func requestAndStart() {
         authorizationStatus = manager.authorizationStatus
+        accuracyAuthorization = manager.accuracyAuthorization
         if manager.authorizationStatus == .notDetermined {
             manager.requestAlwaysAuthorization()
         }
+        manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         manager.startUpdatingLocation()
         isMonitoring = true
     }
 
-    public func pulseForAccessoryLock() {
+    /// Gently nudges `locationd` to re-evaluate the navigation accuracy tier without dropping
+    /// the active CoreLocation subscription (avoids triggering a spurious iAP2 0xFFFC stop).
+    public func nudgeForAccessoryLock() {
         authorizationStatus = manager.authorizationStatus
+        accuracyAuthorization = manager.accuracyAuthorization
+        guard isMonitoring else { return }
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self, self.isMonitoring else { return }
+            self.manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+            self.manager.startUpdatingLocation()
+        }
+    }
+
+    public func pulseForAccessoryLock(requestSingleFix: Bool = false) {
+        authorizationStatus = manager.authorizationStatus
+        accuracyAuthorization = manager.accuracyAuthorization
         manager.stopUpdatingLocation()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self, self.isMonitoring else { return }
+            self.manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
             self.manager.startUpdatingLocation()
-            self.manager.requestLocation()
+            if requestSingleFix {
+                self.manager.requestLocation()
+            }
         }
     }
 
     public func requestOneShot() {
         authorizationStatus = manager.authorizationStatus
+        accuracyAuthorization = manager.accuracyAuthorization
         if manager.authorizationStatus == .notDetermined {
             manager.requestWhenInUseAuthorization()
         }
@@ -65,8 +93,10 @@ public final class LiveCoreLocationMonitor: NSObject, ObservableObject, CLLocati
 
     public nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let status = manager.authorizationStatus
+        let accuracy = manager.accuracyAuthorization
         Task { @MainActor in
             self.authorizationStatus = status
+            self.accuracyAuthorization = accuracy
             if self.isMonitoring, status == .authorizedAlways || status == .authorizedWhenInUse {
                 self.manager.startUpdatingLocation()
             }

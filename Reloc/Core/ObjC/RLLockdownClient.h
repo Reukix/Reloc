@@ -30,7 +30,10 @@ typedef void (^RLLockdownEventBlock)(NSString *event, NSDictionary<NSString *, i
                                timeout:(NSTimeInterval)timeout
                                  error:(NSError * _Nullable * _Nullable)error;
 
-/// Sends StopSession (best-effort) and closes the lockdown control socket.
+/// Thread-safe non-blocking cancellation that closes the underlying socket immediately.
+- (void)cancel;
+
+/// Sends StopSession (best-effort) on the session queue and closes the lockdown control socket.
 - (void)close;
 
 @end

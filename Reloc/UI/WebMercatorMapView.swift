@@ -102,7 +102,7 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
 
     private var tileViews: [TileKey: UIImageView] = [:]
     private var inFlightTasks: [TileKey: URLSessionDataTask] = [:]
-    private var failedTiles: Set<TileKey> = []
+    private var failedTiles: [TileKey: CFAbsoluteTime] = [:]
 
     // Pan / Pinch / Animation state
     private var panStartCenterNorm = CGPoint.zero
@@ -157,7 +157,7 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
     }
 
     private func setup() {
-        backgroundColor = UIColor(red: 0.90, green: 0.92, blue: 0.95, alpha: 1.0)
+        backgroundColor = UIColor.secondarySystemBackground
         clipsToBounds = true
 
         tileContainer.isUserInteractionEnabled = false
@@ -501,7 +501,14 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
     }
 
     private func fetchTile(for key: TileKey) {
-        guard inFlightTasks[key] == nil, !failedTiles.contains(key) else { return }
+        guard inFlightTasks[key] == nil else { return }
+        let now = CFAbsoluteTimeGetCurrent()
+        if let failedAt = failedTiles[key] {
+            if now - failedAt < 15.0 {
+                return
+            }
+            failedTiles.removeValue(forKey: key)
+        }
         var req = URLRequest(url: tileURL(for: key))
         req.cachePolicy = .returnCacheDataElseLoad
 
@@ -521,7 +528,10 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
                 guard let self else { return }
                 self.inFlightTasks.removeValue(forKey: key)
                 guard let image else {
-                    self.failedTiles.insert(key)
+                    if self.failedTiles.count > 500 {
+                        self.failedTiles.removeAll()
+                    }
+                    self.failedTiles[key] = CFAbsoluteTimeGetCurrent()
                     return
                 }
                 Self.memoryCache.setObject(image, forKey: key.cacheKey)

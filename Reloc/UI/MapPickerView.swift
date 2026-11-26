@@ -4,13 +4,13 @@ import SwiftUI
 
 struct MapPickerView: View {
     @ObservedObject var viewModel: RelocViewModel
-    @ObservedObject private var coreLocation: LiveCoreLocationMonitor
-    @Environment(\.colorScheme) private var colorScheme
     let switchToConfig: () -> Void
 
     @State private var searchText = ""
     @State private var searchResults: [MKMapItem] = []
     @State private var isSearching = false
+    @State private var activeSearch: MKLocalSearch?
+    @FocusState private var isSearchFocused: Bool
     @State private var cameraTarget: CLLocationCoordinate2D?
     @State private var showManualCoordinate = false
     @State private var showPlacesSheet = false
@@ -19,7 +19,6 @@ struct MapPickerView: View {
 
     init(viewModel: RelocViewModel, switchToConfig: @escaping () -> Void) {
         self.viewModel = viewModel
-        self._coreLocation = ObservedObject(wrappedValue: viewModel.coreLocation)
         self.switchToConfig = switchToConfig
     }
 
@@ -33,6 +32,7 @@ struct MapPickerView: View {
                     mapSource: viewModel.mapSource,
                     cameraTarget: $cameraTarget,
                     onTapCoordinate: { coord in
+                        isSearchFocused = false
                         RelocTheme.hapticLight()
                         viewModel.selectLocationFromMap(coord)
                     }
@@ -43,11 +43,10 @@ struct MapPickerView: View {
                     activeCoordinate: viewModel.activeMapCoordinate,
                     isSessionRunning: viewModel.snapshot.isRunning,
                     pendingCoordinate: viewModel.pendingMapCoordinate,
-                    mapSource: viewModel.mapSource,
                     mapStyle: viewModel.mapStyle,
-                    isDarkMode: colorScheme == .dark,
                     cameraTarget: $cameraTarget,
                     onTapCoordinate: { coord in
+                        isSearchFocused = false
                         RelocTheme.hapticLight()
                         viewModel.selectLocationFromMap(coord)
                     }
@@ -56,17 +55,7 @@ struct MapPickerView: View {
             }
 
             VStack(spacing: 10) {
-                searchBar
-                if !searchResults.isEmpty {
-                    searchResultsList
-                }
-                topStatusRow
-
-                if let interrupted = viewModel.interruptedSession, !viewModel.snapshot.isRunning {
-                    interruptedRecoveryBanner(interrupted)
-                }
-
-                Spacer()
+                Spacer(minLength: 0)
 
                 HStack {
                     Spacer()
@@ -77,8 +66,24 @@ struct MapPickerView: View {
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 10)
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+
+            VStack(spacing: 10) {
+                searchBar
+                if !searchResults.isEmpty {
+                    searchResultsList
+                } else {
+                    topStatusRow
+
+                    if let interrupted = viewModel.interruptedSession, !viewModel.snapshot.isRunning {
+                        interruptedRecoveryBanner(interrupted)
+                    }
+                }
+            }
+            .padding(.horizontal, 12)
             .padding(.top, 8)
         }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .toolbarBackground(.hidden, for: .tabBar)
         .sheet(isPresented: $showManualCoordinate) {
             ManualCoordinateSheet(viewModel: viewModel) { coord in
@@ -114,32 +119,42 @@ struct MapPickerView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
+                .focused($isSearchFocused)
                 .onSubmit { performSearch() }
 
-            if isSearching {
-                ProgressView().controlSize(.small)
-            } else if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                    searchResults = []
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+            Group {
+                if isSearching {
+                    ProgressView().controlSize(.small)
+                } else if !searchText.isEmpty {
+                    Button {
+                        activeSearch?.cancel()
+                        activeSearch = nil
+                        isSearching = false
+                        searchText = ""
+                        searchResults = []
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Button {
+                        RelocTheme.hapticLight()
+                        isSearchFocused = false
+                        showManualCoordinate = true
+                    } label: {
+                        Image(systemName: "number.circle.fill")
+                            .font(.system(size: 19))
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityLabel("手动输入坐标")
                 }
-            } else {
-                Button {
-                    RelocTheme.hapticLight()
-                    showManualCoordinate = true
-                } label: {
-                    Image(systemName: "number.circle.fill")
-                        .font(.system(size: 19))
-                        .foregroundStyle(.secondary)
-                }
-                .accessibilityLabel("手动输入坐标")
             }
+            .frame(width: 24, height: 24)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.vertical, 10)
+        .frame(minHeight: 44)
         .background(.regularMaterial, in: Capsule())
         .overlay(
             Capsule().strokeBorder(Color.white.opacity(0.28), lineWidth: 0.7)
@@ -265,7 +280,7 @@ struct MapPickerView: View {
                 ? "待刷新生效 · ACK \(viewModel.snapshot.packetsAcknowledged)"
                 : "切换定位中 · ACK \(viewModel.snapshot.packetsAcknowledged)"
         case .waitingSubscription:
-            return "已鉴权 · 唤醒订阅中…"
+            return viewModel.needsLocationServiceRefresh ? "已鉴权 · 待刷新订阅" : "已鉴权 · 唤醒订阅中…"
         case .connecting:
             return "建立回环连接中…"
         case .idle:
@@ -274,39 +289,52 @@ struct MapPickerView: View {
         }
     }
 
-    private var searchResultsList: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(searchResults.prefix(6).enumerated()), id: \.offset) { _, item in
-                    Button {
-                        RelocTheme.hapticLight()
-                        let coord = item.placemark.coordinate
-                        viewModel.selectSearchResultCoordinate(coord, name: item.name, address: item.placemark.title)
-                        cameraTarget = viewModel.pendingMapCoordinate ?? viewModel.activeMapCoordinate
-                        searchResults = []
-                        searchText = ""
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "mappin.circle.fill")
-                                .foregroundStyle(RelocTheme.accent)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.name ?? "未知地点")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                if let title = item.placemark.title {
-                                    Text(title)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
+    private var searchResultsContent: some View {
+        let items = Array(searchResults.prefix(6).enumerated())
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(items, id: \.offset) { index, item in
+                Button {
+                    RelocTheme.hapticLight()
+                    isSearchFocused = false
+                    let coord = item.placemark.coordinate
+                    viewModel.selectSearchResultCoordinate(coord, name: item.name, address: item.placemark.title)
+                    cameraTarget = viewModel.pendingMapCoordinate ?? viewModel.activeMapCoordinate
+                    searchResults = []
+                    searchText = ""
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "mappin.circle.fill")
+                            .foregroundStyle(RelocTheme.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.name ?? "未知地点")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            if let title = item.placemark.title {
+                                Text(title)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
                             }
-                            Spacer()
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        Spacer()
                     }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+                if index < items.count - 1 {
                     Divider().padding(.leading, 40)
                 }
+            }
+        }
+    }
+
+    private var searchResultsList: some View {
+        ViewThatFits(in: .vertical) {
+            searchResultsContent
+            ScrollView {
+                searchResultsContent
             }
         }
         .frame(maxHeight: 230)
@@ -439,7 +467,7 @@ struct MapPickerView: View {
                     .background(RelocTheme.amber.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .foregroundStyle(.primary)
-            } else if coreLocation.authorizationStatus == .denied || coreLocation.authorizationStatus == .restricted {
+            } else if viewModel.locationAuthorizationStatus == .denied || viewModel.locationAuthorizationStatus == .restricted {
                 HStack(spacing: 8) {
                     Image(systemName: "location.slash.fill").foregroundStyle(RelocTheme.crimson)
                     Text("未开启定位权限，无法自动触发外设订阅").font(.caption.weight(.semibold))
@@ -455,6 +483,22 @@ struct MapPickerView: View {
                 }
                 .padding(10)
                 .background(RelocTheme.crimson.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else if viewModel.isLocationReducedAccuracy {
+                HStack(spacing: 8) {
+                    Image(systemName: "scope").foregroundStyle(RelocTheme.amber)
+                    Text("未开启「精确位置」，可能导致外设 GPS 无法锁定或偏移").font(.caption.weight(.semibold))
+                    Spacer()
+                    Button("去开启") {
+                        viewModel.openAppSettings()
+                    }
+                    .font(.caption.weight(.bold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(RelocTheme.amber, in: Capsule())
+                    .foregroundStyle(.white)
+                }
+                .padding(10)
+                .background(RelocTheme.amber.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else if viewModel.snapshot.isRunning {
                 liveTriggerStatusBanner
             } else if viewModel.isRestoringRealLocation {
@@ -576,11 +620,16 @@ struct MapPickerView: View {
             .padding(10)
             .background(RelocTheme.emerald.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-        case .injectingPendingLock where viewModel.needsLocationServiceRefresh:
+        case .injectingPendingLock where viewModel.needsLocationServiceRefresh,
+             .waitingSubscription where viewModel.needsLocationServiceRefresh:
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 7) {
                     Image(systemName: "bolt.circle.fill").foregroundStyle(RelocTheme.amber)
-                    Text("NMEA 已连通，但系统仍在沿用本机缓存定位。点击下方一键刷新（含悬浮 5 秒倒计时）即可 100% 强制切换。")
+                    Text(
+                        viewModel.injectionPhase == .waitingSubscription
+                            ? "MFi 鉴权已通过，但系统尚未订阅外设 GPS。点击下方一键刷新（含悬浮 5 秒倒计时）即可唤醒订阅。"
+                            : "NMEA 已连通，但系统仍在沿用本机缓存定位。点击下方一键刷新（含悬浮 5 秒倒计时）即可 100% 强制切换。"
+                    )
                         .font(.caption2)
                         .foregroundStyle(.primary)
                 }
@@ -647,6 +696,7 @@ struct MapPickerView: View {
     private func performSearch() {
         let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        isSearchFocused = false
 
         let parts = trimmed.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         if parts.count == 2, let lat = Double(parts[0]), let lon = Double(parts[1]),
@@ -658,12 +708,16 @@ struct MapPickerView: View {
             return
         }
 
+        activeSearch?.cancel()
         isSearching = true
         let req = MKLocalSearch.Request()
         req.naturalLanguageQuery = trimmed
         let search = MKLocalSearch(request: req)
+        activeSearch = search
         search.start { response, _ in
             Task { @MainActor in
+                guard activeSearch === search else { return }
+                activeSearch = nil
                 isSearching = false
                 searchResults = response?.mapItems ?? []
             }
@@ -677,9 +731,7 @@ private struct InteractiveMKMapView: UIViewRepresentable {
     let activeCoordinate: CLLocationCoordinate2D
     let isSessionRunning: Bool
     let pendingCoordinate: CLLocationCoordinate2D?
-    let mapSource: MapSource
     let mapStyle: MapDisplayStyle
-    let isDarkMode: Bool
     @Binding var cameraTarget: CLLocationCoordinate2D?
     let onTapCoordinate: (CLLocationCoordinate2D) -> Void
 
@@ -687,8 +739,8 @@ private struct InteractiveMKMapView: UIViewRepresentable {
         Coordinator(onTapCoordinate: onTapCoordinate)
     }
 
-    func makeUIView(context: Context) -> RelocMKMapView {
-        let mapView = RelocMKMapView(frame: .zero)
+    func makeUIView(context: Context) -> MKMapView {
+        let mapView = MKMapView(frame: .zero)
         mapView.delegate = context.coordinator
         mapView.showsCompass = true
         mapView.showsScale = true
@@ -696,7 +748,7 @@ private struct InteractiveMKMapView: UIViewRepresentable {
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         mapView.addGestureRecognizer(tap)
 
-        applyMapSource(to: mapView, context: context)
+        applyMapStyle(to: mapView)
 
         let activeAnn = TaggedAnnotation(kind: .active)
         activeAnn.coordinate = activeCoordinate
@@ -712,11 +764,11 @@ private struct InteractiveMKMapView: UIViewRepresentable {
         return mapView
     }
 
-    func updateUIView(_ uiView: RelocMKMapView, context: Context) {
+    func updateUIView(_ uiView: MKMapView, context: Context) {
         context.coordinator.onTapCoordinate = onTapCoordinate
         context.coordinator.isSessionRunning = isSessionRunning
 
-        applyMapSource(to: uiView, context: context)
+        applyMapStyle(to: uiView)
 
         if let activeAnn = context.coordinator.activeAnnotation {
             if abs(activeAnn.coordinate.latitude - activeCoordinate.latitude) > 1e-9 ||
@@ -757,34 +809,12 @@ private struct InteractiveMKMapView: UIViewRepresentable {
         }
     }
 
-    private func applyMapSource(to mapView: RelocMKMapView, context: Context) {
-        mapView.hideNativeAttribution = mapSource.isPureWGS84
-
-        if mapSource == .appleNative {
-            if let overlay = context.coordinator.tileOverlay {
-                mapView.removeOverlay(overlay)
-                context.coordinator.tileOverlay = nil
-                context.coordinator.appliedTileKey = nil
-            }
-            switch mapStyle {
-            case .standard: mapView.mapType = .standard
-            case .satellite: mapView.mapType = .satellite
-            case .hybrid: mapView.mapType = .hybrid
-            }
-            return
+    private func applyMapStyle(to mapView: MKMapView) {
+        switch mapStyle {
+        case .standard: mapView.mapType = .standard
+        case .satellite: mapView.mapType = .satellite
+        case .hybrid: mapView.mapType = .hybrid
         }
-
-        let key = mapSource.rawValue
-        guard context.coordinator.appliedTileKey != key else { return }
-
-        if let existing = context.coordinator.tileOverlay {
-            mapView.removeOverlay(existing)
-        }
-        mapView.mapType = .standard
-        let overlay = GlobalWGSTileOverlay(source: mapSource, isDarkMode: isDarkMode)
-        mapView.addOverlay(overlay, level: .aboveLabels)
-        context.coordinator.tileOverlay = overlay
-        context.coordinator.appliedTileKey = key
     }
 
     final class TaggedAnnotation: MKPointAnnotation {
@@ -801,8 +831,6 @@ private struct InteractiveMKMapView: UIViewRepresentable {
         var isSessionRunning = false
         var activeAnnotation: TaggedAnnotation?
         var pendingAnnotation: TaggedAnnotation?
-        var tileOverlay: MKTileOverlay?
-        var appliedTileKey: String?
 
         init(onTapCoordinate: @escaping (CLLocationCoordinate2D) -> Void) {
             self.onTapCoordinate = onTapCoordinate
@@ -813,13 +841,6 @@ private struct InteractiveMKMapView: UIViewRepresentable {
             let point = gesture.location(in: mapView)
             let coord = mapView.convert(point, toCoordinateFrom: mapView)
             onTapCoordinate(coord)
-        }
-
-        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let tile = overlay as? MKTileOverlay {
-                return MKTileOverlayRenderer(tileOverlay: tile)
-            }
-            return MKOverlayRenderer(overlay: overlay)
         }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
@@ -838,123 +859,6 @@ private struct InteractiveMKMapView: UIViewRepresentable {
             }
             return view
         }
-    }
-}
-
-/// MKMapView subclass that suppresses the underlying MapKit/AutoNavi attribution logo
-/// when custom WGS-84 tiles completely replace map content (`canReplaceMapContent = true`).
-private final class RelocMKMapView: MKMapView {
-    var hideNativeAttribution: Bool = false {
-        didSet {
-            updateAttributionSubviews()
-        }
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        updateAttributionSubviews()
-    }
-
-    override func didAddSubview(_ subview: UIView) {
-        super.didAddSubview(subview)
-        updateAttributionSubviews()
-    }
-
-    private func updateAttributionSubviews() {
-        Self.applyAttributionVisibility(in: self, hide: hideNativeAttribution, depth: 0)
-    }
-
-    private static func applyAttributionVisibility(in root: UIView, hide: Bool, depth: Int) {
-        guard depth <= 4 else { return }
-        for subview in root.subviews {
-            let className = String(describing: type(of: subview))
-            // Never touch map rendering canvas, overlays, annotations, compass, or scale bar.
-            if className.contains("BasicMap")
-                || className.contains("VKMap")
-                || className.contains("Annotation")
-                || className.contains("Overlay")
-                || className.contains("Compass")
-                || className.contains("Scale") {
-                continue
-            }
-            if isAttributionView(subview, className: className) {
-                subview.isHidden = hide
-                subview.alpha = hide ? 0.0 : 1.0
-                continue
-            }
-            applyAttributionVisibility(in: subview, hide: hide, depth: depth + 1)
-        }
-    }
-
-    private static func isAttributionView(_ view: UIView, className: String) -> Bool {
-        if className.localizedCaseInsensitiveContains("Attribution")
-            || className.localizedCaseInsensitiveContains("Logo")
-            || className.localizedCaseInsensitiveContains("Legal") {
-            return true
-        }
-        if let label = view as? UILabel, let text = label.text,
-           (text.contains("高德") || text.localizedCaseInsensitiveContains("AutoNavi") || text.contains("法律") || text.localizedCaseInsensitiveContains("Legal")) {
-            return true
-        }
-        return false
-    }
-}
-
-/// High-DPI cached global WGS-84 tile overlay (`canReplaceMapContent = true`) that completely replaces
-/// AutoNavi/AMap tiles on Mainland China devices while keeping MapKit gestures, annotations, and search.
-private final class GlobalWGSTileOverlay: MKTileOverlay {
-    private let source: MapSource
-    private let isDarkMode: Bool
-
-    private static let tileSession: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.urlCache = URLCache(
-            memoryCapacity: 32 * 1024 * 1024,
-            diskCapacity: 128 * 1024 * 1024,
-            diskPath: "reloc_map_tiles"
-        )
-        config.requestCachePolicy = .returnCacheDataElseLoad
-        config.httpAdditionalHeaders = [
-            "User-Agent": "Reloc/1.0 (iOS; https://github.com/reloc)",
-        ]
-        config.timeoutIntervalForRequest = 12
-        return URLSession(configuration: config)
-    }()
-
-    init(source: MapSource, isDarkMode: Bool) {
-        self.source = source
-        self.isDarkMode = isDarkMode
-        super.init(urlTemplate: nil)
-        self.canReplaceMapContent = true
-        self.minimumZ = 0
-        self.maximumZ = 19
-        self.tileSize = CGSize(width: 256, height: 256)
-    }
-
-    override func url(forTilePath path: MKTileOverlayPath) -> URL {
-        switch source {
-        case .globalStreet:
-            return URL(string: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/\(path.z)/\(path.y)/\(path.x)")!
-        case .globalOSM:
-            return URL(string: "https://tile.openstreetmap.org/\(path.z)/\(path.x)/\(path.y).png")!
-        case .globalSatellite:
-            return URL(string: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/\(path.z)/\(path.y)/\(path.x)")!
-        case .appleNative:
-            return URL(string: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/\(path.z)/\(path.y)/\(path.x)")!
-        }
-    }
-
-    override func loadTile(at path: MKTileOverlayPath, result: @escaping (Data?, Error?) -> Void) {
-        let tileURL = url(forTilePath: path)
-        var req = URLRequest(url: tileURL)
-        req.cachePolicy = .returnCacheDataElseLoad
-        Self.tileSession.dataTask(with: req) { data, response, error in
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                result(nil, NSError(domain: "RelocTileOverlay", code: http.statusCode))
-                return
-            }
-            result(data, error)
-        }.resume()
     }
 }
 
@@ -1112,16 +1016,36 @@ private struct ManualCoordinateSheet: View {
     @State private var altText = ""
     @State private var favoriteName = ""
 
+    private var parsedCoordinate: (lat: Double, lon: Double, alt: Double)? {
+        guard let lat = Double(latText.trimmingCharacters(in: .whitespaces)),
+              let lon = Double(lonText.trimmingCharacters(in: .whitespaces)),
+              lat.isFinite, lon.isFinite,
+              (-90.0...90.0).contains(lat),
+              (-180.0...180.0).contains(lon) else {
+            return nil
+        }
+        let trimmedAlt = altText.trimmingCharacters(in: .whitespaces)
+        let alt = Double(trimmedAlt).flatMap { $0.isFinite ? $0 : nil } ?? viewModel.inspectedLocation.altitude
+        return (lat, lon, alt)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
-                Section("WGS-84 坐标") {
+                Section {
                     TextField("纬度 (-90 ~ 90)", text: $latText)
                         .keyboardType(.numbersAndPunctuation)
                     TextField("经度 (-180 ~ 180)", text: $lonText)
                         .keyboardType(.numbersAndPunctuation)
                     TextField("海拔 (米)", text: $altText)
                         .keyboardType(.numbersAndPunctuation)
+                } header: {
+                    Text("WGS-84 坐标")
+                } footer: {
+                    if parsedCoordinate == nil {
+                        Text("请输入合法的纬度（-90 ~ 90）和经度（-180 ~ 180）。")
+                            .foregroundStyle(RelocTheme.crimson)
+                    }
                 }
 
                 Section("保存到收藏（可选）") {
@@ -1136,20 +1060,19 @@ private struct ManualCoordinateSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("应用") {
-                        if let lat = Double(latText), let lon = Double(lonText),
-                           (-90.0...90.0).contains(lat), (-180.0...180.0).contains(lon) {
-                            let alt = Double(altText) ?? viewModel.inspectedLocation.altitude
-                            viewModel.selectWGSLocation(
-                                TargetLocation(latitude: lat, longitude: lon, altitude: alt),
-                                name: favoriteName.trimmingCharacters(in: .whitespaces).isEmpty ? nil : favoriteName
-                            )
-                            if !favoriteName.trimmingCharacters(in: .whitespaces).isEmpty {
-                                viewModel.saveCurrentAsFavorite(name: favoriteName)
-                            }
-                            onApply(viewModel.pendingMapCoordinate ?? viewModel.activeMapCoordinate)
-                            dismiss()
+                        guard let parsed = parsedCoordinate else { return }
+                        let trimmedName = favoriteName.trimmingCharacters(in: .whitespaces)
+                        viewModel.selectWGSLocation(
+                            TargetLocation(latitude: parsed.lat, longitude: parsed.lon, altitude: parsed.alt),
+                            name: trimmedName.isEmpty ? nil : trimmedName
+                        )
+                        if !trimmedName.isEmpty {
+                            viewModel.saveCurrentAsFavorite(name: trimmedName)
                         }
+                        onApply(viewModel.pendingMapCoordinate ?? viewModel.activeMapCoordinate)
+                        dismiss()
                     }
+                    .disabled(parsedCoordinate == nil)
                 }
             }
             .onAppear {

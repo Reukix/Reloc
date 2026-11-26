@@ -41,6 +41,9 @@ static BOOL RLVerifyZeroSum(const uint8_t *bytes, NSUInteger length) {
 }
 
 - (NSData *)encode {
+    if (self.payload.length > UINT16_MAX - 10) {
+        return [NSData data];
+    }
     BOOL hasPayload = self.payload.length > 0;
     uint16_t totalSize = (uint16_t)(9 + self.payload.length + (hasPayload ? 1 : 0));
 
@@ -126,6 +129,9 @@ static BOOL RLVerifyZeroSum(const uint8_t *bytes, NSUInteger length) {
 
 + (NSData *)encodeParameter:(uint16_t)identifier data:(nullable NSData *)data {
     NSUInteger len = data.length;
+    if (len > UINT16_MAX - 4) {
+        return [NSData data];
+    }
     uint16_t totalSize = (uint16_t)(len + 4);
     uint8_t header[4] = {
         (uint8_t)(totalSize >> 8),
@@ -153,6 +159,10 @@ static BOOL RLVerifyZeroSum(const uint8_t *bytes, NSUInteger length) {
     [nulTerminated appendData:utf8];
     uint8_t nul = 0;
     [nulTerminated appendBytes:&nul length:1];
+    if (nulTerminated.length > UINT16_MAX - 4) {
+        if (error) *error = RLIAP2Err(@"iAP2 text parameter exceeds maximum length");
+        return nil;
+    }
     return [self encodeParameter:identifier data:nulTerminated];
 }
 
@@ -194,6 +204,9 @@ static BOOL RLVerifyZeroSum(const uint8_t *bytes, NSUInteger length) {
 }
 
 - (NSData *)encode {
+    if (self.body.length > UINT16_MAX - 6) {
+        return [NSData data];
+    }
     uint16_t totalSize = (uint16_t)(self.body.length + 6);
     uint8_t header[6] = {
         0x40, 0x40,

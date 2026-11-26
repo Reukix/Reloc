@@ -109,14 +109,21 @@ public final class AccessoryLocationSession {
     public typealias EventCallback = @Sendable (ProtocolEvent) -> Void
     public typealias SnapshotCallback = @Sendable (SessionSnapshot) -> Void
 
+    public let id: UUID
     private let queue = DispatchQueue(label: "com.reloc.session", qos: .userInitiated)
     private let stateLock = NSLock()
     private var cancelled = false
+    private var runGeneration: UInt64 = 0
     private var activeLockdown: RLLockdownClient?
     private var activeTunnelHandle: UInt64 = 0
     private var activeLink: IAP2Link?
+    private var activeSocket: RLTLSSocket?
     private var coreLocationConfirmed = false
     private var fastBurstUntil: CFAbsoluteTime = 0
+    private var pendingKalmanReset = false
+    private var burstMotionPacketsRemaining = 0
+    private var pendingReconnectReason: String?
+    private var fallbackRealLocation: TargetLocation?
 
     public let locationBox: LiveLocationBox
     private let onEvent: EventCallback
@@ -125,16 +132,20 @@ public final class AccessoryLocationSession {
     private let onLocationRequested: (@Sendable () -> Void)?
     private let onLocationStopped: (@Sendable () -> Void)?
     private let onSubscriptionRestarted: (@Sendable () -> Void)?
+    private let onDiscoveredPort: (@Sendable (UInt16) -> Void)?
 
     public init(
+        id: UUID = UUID(),
         initialLocation: TargetLocation,
         onEvent: @escaping EventCallback,
         onSnapshot: @escaping SnapshotCallback,
         onAuthenticated: (@Sendable () -> Void)? = nil,
         onLocationRequested: (@Sendable () -> Void)? = nil,
         onLocationStopped: (@Sendable () -> Void)? = nil,
-        onSubscriptionRestarted: (@Sendable () -> Void)? = nil
+        onSubscriptionRestarted: (@Sendable () -> Void)? = nil,
+        onDiscoveredPort: (@Sendable (UInt16) -> Void)? = nil
     ) {
+        self.id = id
         self.locationBox = LiveLocationBox(initialLocation)
         self.onEvent = onEvent
         self.onSnapshot = onSnapshot
@@ -142,6 +153,7 @@ public final class AccessoryLocationSession {
         self.onLocationRequested = onLocationRequested
         self.onLocationStopped = onLocationStopped
         self.onSubscriptionRestarted = onSubscriptionRestarted
+        self.onDiscoveredPort = onDiscoveredPort
     }
 
     /// Updates whether iOS CoreLocation has confirmed `isProducedByAccessory == true` for the target.
@@ -151,7 +163,15 @@ public final class AccessoryLocationSession {
         stateLock.unlock()
     }
 
-    /// Requests a temporary high-cadence NMEA acquisition burst (respecting iOS `minIntervals`)
+    /// Stores the most recent known internal real location so stop-time accuracy degradation
+    /// can gently hand control back to `locationd` indoors without user intervention.
+    public func setFallbackRealLocation(_ location: TargetLocation?) {
+        stateLock.lock()
+        fallbackRealLocation = location
+        stateLock.unlock()
+    }
+
+    /// Requests a temporary high-cadence NMEA acquisition burst (5 Hz)
     /// so `locationd` locks onto the external accessory GPS as rapidly as possible.
     public func triggerFastBurst(seconds: TimeInterval = 15.0) {
         stateLock.lock()
@@ -159,15 +179,44 @@ public final class AccessoryLocationSession {
         stateLock.unlock()
     }
 
-    private func effectiveInterval(base: TimeInterval, now: CFAbsoluteTime) -> TimeInterval {
+    /// Wakes the streaming loop immediately on coordinate change, optionally emitting a brief
+    /// void-fix pulse and micro-motion burst to reset `locationd`'s Kalman filter.
+    public func notifyLocationUpdated(resetKalman: Bool = true, burstSeconds: TimeInterval = 10.0) {
+        stateLock.lock()
+        coreLocationConfirmed = false
+        if resetKalman {
+            pendingKalmanReset = true
+            burstMotionPacketsRemaining = max(burstMotionPacketsRemaining, 2)
+        }
+        fastBurstUntil = max(fastBurstUntil, CFAbsoluteTimeGetCurrent() + burstSeconds)
+        let sock = activeSocket
+        stateLock.unlock()
+        sock?.nudge()
+    }
+
+    /// Requests a clean iAP2 link reset & immediate reconnect (e.g. if `0xFFFA` or lock stalls).
+    public func requestLinkReconnect(reason: String) {
+        stateLock.lock()
+        pendingReconnectReason = reason
+        let sock = activeSocket
+        stateLock.unlock()
+        sock?.nudge()
+    }
+
+    private func consumeReconnectReason() -> String? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        let reason = pendingReconnectReason
+        pendingReconnectReason = nil
+        return reason
+    }
+
+    private func isFastBurstActive(now: CFAbsoluteTime) -> Bool {
         stateLock.lock()
         let confirmed = coreLocationConfirmed
         let burstDeadline = fastBurstUntil
         stateLock.unlock()
-        if !confirmed && now < burstDeadline {
-            return min(base, 0.25)
-        }
-        return base
+        return !confirmed && now < burstDeadline
     }
 
     /// Verifies device loopback connectivity and reads device identity (modeled on Reukix/retools).
@@ -246,16 +295,24 @@ public final class AccessoryLocationSession {
             Task { [weak self] in
                 guard let self else { return }
                 let port: UInt16
+                let usedCachedPort: Bool
                 if let discoveredRemotePort {
                     port = discoveredRemotePort
+                    usedCachedPort = true
+                } else if let discovered = await RemotePairingDiscovery.discoverPort(record: data) {
+                    port = discovered
+                    usedCachedPort = false
+                    self.onDiscoveredPort?(discovered)
                 } else {
-                    port = await RemotePairingDiscovery.discoverPort(record: data) ?? configuration.remotePort
+                    port = configuration.remotePort
+                    usedCachedPort = false
                 }
                 self.queue.async {
                     self.runOverRemotePairing(
                         configuration: configuration,
                         recordData: data,
                         port: port,
+                        usedCachedPort: usedCachedPort,
                         mfiSigner: mfiSigner
                     )
                 }
@@ -294,19 +351,28 @@ public final class AccessoryLocationSession {
     public func stop() {
         stateLock.lock()
         cancelled = true
+        let stopGeneration = runGeneration
         let hasActiveLink = (activeLink != nil)
+        let sock = activeSocket
         stateLock.unlock()
+
+        sock?.nudge()
 
         if !hasActiveLink {
             forceCloseActiveTransports()
             return
         }
 
-        // Give `runOnSocket` up to 0.9s to flush Void NMEA (GGA quality=0 / RMC status=V)
-        // and an iAP2 RST control packet so iOS immediately detaches the external GPS accessory,
-        // then force-close as a failsafe if the transport is wedged.
+        // Give `runOnSocket` up to 0.9s to flush degraded/void NMEA and an iAP2 RST control packet
+        // so iOS immediately detaches the external GPS accessory, then force-close as a failsafe.
         DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.9) { [weak self] in
-            self?.forceCloseActiveTransports()
+            guard let self else { return }
+            self.stateLock.lock()
+            let sameRunAndCancelled = (self.runGeneration == stopGeneration && self.cancelled)
+            self.stateLock.unlock()
+            if sameRunAndCancelled {
+                self.forceCloseActiveTransports()
+            }
         }
     }
 
@@ -319,7 +385,7 @@ public final class AccessoryLocationSession {
         stateLock.unlock()
 
         link?.close()
-        lockdown?.close()
+        lockdown?.cancel()
         if tunnelHandle != 0 {
             rl_rppairing_close_service(tunnelHandle)
         }
@@ -328,6 +394,10 @@ public final class AccessoryLocationSession {
     private func resetCancellation() {
         stateLock.lock()
         cancelled = false
+        pendingKalmanReset = false
+        burstMotionPacketsRemaining = 0
+        pendingReconnectReason = nil
+        runGeneration &+= 1
         stateLock.unlock()
     }
 
@@ -352,6 +422,7 @@ public final class AccessoryLocationSession {
 
     private enum SocketRunOutcome {
         case completed(packetCount: Int)
+        case reconnectRequested(String, packetCount: Int)
         case recoverableError(String, didSendPackets: Bool, packetCount: Int)
         case fatalError(String)
     }
@@ -395,6 +466,7 @@ public final class AccessoryLocationSession {
         configuration: SessionConfiguration,
         recordData: Data,
         port initialPort: UInt16,
+        usedCachedPort: Bool,
         mfiSigner: RLMFiSigner
     ) {
         let overallDeadline: CFAbsoluteTime? = configuration.durationSeconds > 0
@@ -407,6 +479,7 @@ public final class AccessoryLocationSession {
         onSnapshot(snapshot)
 
         var currentPort = initialPort
+        var cachedPortPendingRefresh = usedCachedPort
         var reconnectAttempt = 0
         var cumulativePackets = 0
 
@@ -418,6 +491,8 @@ public final class AccessoryLocationSession {
             if reconnectAttempt > 0 {
                 if let freshPort = discoverRemotePortSync(recordData: recordData) {
                     currentPort = freshPort
+                    cachedPortPendingRefresh = false
+                    onDiscoveredPort?(freshPort)
                 }
                 if isCancelled() { break }
             }
@@ -482,7 +557,8 @@ public final class AccessoryLocationSession {
                     break
                 }
                 reconnectAttempt += 1
-                let delay = min(5.0, pow(1.5, Double(reconnectAttempt - 1)))
+                let delay = cachedPortPendingRefresh ? 0.25 : min(5.0, pow(1.5, Double(reconnectAttempt - 1)))
+                cachedPortPendingRefresh = false
                 snapshot.lockdownConnected = false
                 snapshot.linkReady = false
                 snapshot.identified = false
@@ -495,6 +571,8 @@ public final class AccessoryLocationSession {
                 sleepCancellable(delay, deadline: overallDeadline)
                 continue
             }
+
+            cachedPortPendingRefresh = false
 
             let usedService = obj["service"] as? String ?? configuration.serviceName
             let usedPort = obj["port"] as? Int ?? 0
@@ -557,6 +635,21 @@ public final class AccessoryLocationSession {
                 snapshot.isRunning = false
                 onSnapshot(snapshot)
                 return
+
+            case .reconnectRequested(let reason, let packetCount):
+                cumulativePackets = packetCount
+                if isCancelled() { break }
+                if let overallDeadline, CFAbsoluteTimeGetCurrent() >= overallDeadline {
+                    break
+                }
+                reconnectAttempt = 0
+                snapshot = SessionSnapshot()
+                snapshot.isRunning = true
+                snapshot.mode = configuration.mode
+                snapshot.packetsAcknowledged = cumulativePackets
+                onSnapshot(snapshot)
+                emitEvent("reconnecting", details: ["attempt": 1, "delay_s": 0.35, "reason": reason])
+                sleepCancellable(0.35, deadline: overallDeadline)
 
             case .recoverableError(let err, let didSend, let packetCount):
                 cumulativePackets = packetCount
@@ -671,6 +764,22 @@ public final class AccessoryLocationSession {
                     onSnapshot(snapshot)
                     return
 
+                case .reconnectRequested(let reason, let packetCount):
+                    cumulativePackets = packetCount
+                    if isCancelled() { break }
+                    if let overallDeadline, CFAbsoluteTimeGetCurrent() >= overallDeadline {
+                        break
+                    }
+                    reconnectAttempt = 0
+                    snapshot = SessionSnapshot()
+                    snapshot.isRunning = true
+                    snapshot.mode = configuration.mode
+                    snapshot.packetsAcknowledged = cumulativePackets
+                    onSnapshot(snapshot)
+                    emitEvent("reconnecting", details: ["attempt": 1, "delay_s": 0.35, "reason": reason])
+                    sleepCancellable(0.35, deadline: overallDeadline)
+                    continue
+
                 case .recoverableError(let err, let didSend, let packetCount):
                     cumulativePackets = packetCount
                     if configuration.mode != .send || isCancelled() {
@@ -747,12 +856,14 @@ public final class AccessoryLocationSession {
 
         stateLock.lock()
         activeLink = link
+        activeSocket = socket
         stateLock.unlock()
 
         defer {
             link.close()
             stateLock.lock()
             activeLink = nil
+            activeSocket = nil
             stateLock.unlock()
         }
 
@@ -774,6 +885,22 @@ public final class AccessoryLocationSession {
             var sawLocationStopped = false
 
             while !isCancelled() {
+                if let reconnectReason = consumeReconnectReason() {
+                    if snapshot.authenticated {
+                        if !activeSentences.isEmpty {
+                            let voidMap = NMEAGenerator.voidLocationSentences()
+                            let voidOutgoing = activeSentences.sorted().compactMap { voidMap[$0] }
+                            if !voidOutgoing.isEmpty, let voidMsg = try? NMEAGenerator.locationMessage(sentences: voidOutgoing) {
+                                link.sendBestEffort(voidMsg, timeout: 0.2)
+                            }
+                        }
+                        link.sendReset()
+                        emitEvent("iap2_link_reset_sent", details: ["reason": reconnectReason])
+                        Thread.sleep(forTimeInterval: 0.05)
+                    }
+                    return .reconnectRequested(reconnectReason, packetCount: snapshot.packetsAcknowledged)
+                }
+
                 let now = CFAbsoluteTimeGetCurrent()
                 if let deadline, now >= deadline {
                     break
@@ -784,13 +911,20 @@ public final class AccessoryLocationSession {
                    snapshot.identified,
                    snapshot.authenticated,
                    !activeSentences.isEmpty {
-                    let desiredInterval = effectiveInterval(base: configuration.intervalSeconds, now: now)
-                    let nextDue = activeSentences.map { id -> CFAbsoluteTime in
-                        let last = lastSent[id] ?? -.infinity
-                        let required = max(desiredInterval, minIntervals[id] ?? 0.25)
-                        return last.isFinite ? (last + required) : now
-                    }.min() ?? (now + 0.15)
-                    pollSlice = min(pollSlice, max(0.01, nextDue - now))
+                    let burstActive = isFastBurstActive(now: now)
+                    stateLock.lock()
+                    let hasKalmanReset = pendingKalmanReset
+                    stateLock.unlock()
+                    if hasKalmanReset {
+                        pollSlice = 0.01
+                    } else {
+                        let nextDue = activeSentences.map { id -> CFAbsoluteTime in
+                            let last = lastSent[id] ?? -.infinity
+                            let required = burstActive ? 0.2 : max(configuration.intervalSeconds, minIntervals[id] ?? 0.25)
+                            return last.isFinite ? (last + required) : now
+                        }.min() ?? (now + 0.15)
+                        pollSlice = min(pollSlice, max(0.01, nextDue - now))
+                    }
                 }
                 if let deadline {
                     pollSlice = min(pollSlice, max(0.01, deadline - now))
@@ -889,16 +1023,41 @@ public final class AccessoryLocationSession {
                    snapshot.authenticated,
                    !activeSentences.isEmpty,
                    !isCancelled() {
+                    stateLock.lock()
+                    let shouldResetKalman = pendingKalmanReset
+                    pendingKalmanReset = false
+                    stateLock.unlock()
+
+                    if shouldResetKalman {
+                        lastSent.removeAll()
+                        let voidMap = NMEAGenerator.voidLocationSentences()
+                        let voidOutgoing = activeSentences.sorted().compactMap { voidMap[$0] }
+                        if !voidOutgoing.isEmpty, let voidMsg = try? NMEAGenerator.locationMessage(sentences: voidOutgoing) {
+                            link.sendBestEffort(voidMsg, timeout: 0.2)
+                            emitEvent("kalman_reset_void_sent")
+                            Thread.sleep(forTimeInterval: 0.05)
+                        }
+                    }
+
                     let tickNow = CFAbsoluteTimeGetCurrent()
-                    let target = locationBox.get()
-                    let desiredInterval = effectiveInterval(base: configuration.intervalSeconds, now: tickNow)
+                    var target = locationBox.get()
+                    let burstActive = isFastBurstActive(now: tickNow)
                     let due = activeSentences.sorted().filter { id in
                         let last = lastSent[id] ?? -.infinity
-                        let required = max(desiredInterval, minIntervals[id] ?? 0.25)
+                        let required = burstActive ? 0.2 : max(configuration.intervalSeconds, minIntervals[id] ?? 0.25)
                         return tickNow - last >= required
                     }
                     if !due.isEmpty {
-                        let sentenceMap = try NMEAGenerator.locationSentences(for: target)
+                        stateLock.lock()
+                        if burstMotionPacketsRemaining > 0 {
+                            burstMotionPacketsRemaining -= 1
+                            if target.speedKnots == 0 {
+                                target.speedKnots = 0.4
+                            }
+                        }
+                        stateLock.unlock()
+
+                        let sentenceMap = try NMEAGenerator.locationSentences(for: target, hdop: 0.5, fixQuality: 2)
                         let outgoing = due.compactMap { sentenceMap[$0] }
                         let locMsg = try NMEAGenerator.locationMessage(sentences: outgoing)
                         try link.send(locMsg)
@@ -922,19 +1081,34 @@ public final class AccessoryLocationSession {
             }
 
             if isCancelled() && snapshot.authenticated {
-                // Gracefully invalidate the external GNSS fix (GGA quality=0 / RMC status=V)
-                // and send an iAP2 RST so `locationd` immediately drops the accessory source.
+                // Step 1: Degrade cached accessory accuracy (HDOP 35.0) toward fallback real coordinate
+                // so indoor Wi-Fi/Cell positioning immediately outranks the accessory cache.
                 if !activeSentences.isEmpty {
+                    stateLock.lock()
+                    let degradeLoc = fallbackRealLocation ?? locationBox.get()
+                    stateLock.unlock()
+                    if let degradedMap = try? NMEAGenerator.locationSentences(for: degradeLoc, hdop: 35.0, fixQuality: 1) {
+                        let degradedOutgoing = activeSentences.sorted().compactMap { degradedMap[$0] }
+                        if !degradedOutgoing.isEmpty,
+                           let degradedMsg = try? NMEAGenerator.locationMessage(sentences: degradedOutgoing) {
+                            link.sendBestEffort(degradedMsg, timeout: 0.2)
+                            Thread.sleep(forTimeInterval: 0.04)
+                        }
+                    }
+
+                    // Step 2: Emit invalid/void NMEA fix (GGA quality=0 / RMC status=V).
                     let voidMap = NMEAGenerator.voidLocationSentences()
                     let voidOutgoing = activeSentences.sorted().compactMap { voidMap[$0] }
                     if !voidOutgoing.isEmpty, let voidMsg = try? NMEAGenerator.locationMessage(sentences: voidOutgoing) {
-                        try? link.send(voidMsg)
+                        link.sendBestEffort(voidMsg, timeout: 0.2)
                         emitEvent("location_void_sent", details: ["sentences": activeSentences.sorted().map(Int.init)])
+                        Thread.sleep(forTimeInterval: 0.04)
                     }
                 }
+                // Step 3: Send iAP2 RST control packet so iOS detaches the accessory immediately.
                 link.sendReset()
                 emitEvent("iap2_link_reset_sent")
-                Thread.sleep(forTimeInterval: 0.08)
+                Thread.sleep(forTimeInterval: 0.04)
             }
 
             emitEvent("finished", details: [

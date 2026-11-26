@@ -32,6 +32,7 @@ final class PairingPiPPresenter: NSObject, ObservableObject {
     private var deadline: Date = Date().addingTimeInterval(300)
     private var frameCounter: Int64 = 0
     private var wantsAutoStart = false
+    private var pixelBufferPool: CVPixelBufferPool?
 
     enum Mode {
         case pairing
@@ -141,11 +142,13 @@ final class PairingPiPPresenter: NSObject, ObservableObject {
         enqueueCurrentFrame()
 
         dismissTimer?.invalidate()
-        dismissTimer = Timer.scheduledTimer(withTimeInterval: succeeded ? 3.5 : 2.5, repeats: false) { [weak self] _ in
+        let dTimer = Timer(timeInterval: succeeded ? 3.5 : 2.5, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.teardown()
             }
         }
+        RunLoop.main.add(dTimer, forMode: .common)
+        dismissTimer = dTimer
     }
 
     func update(step: Int, headline: String, subtitle: String, pin: String? = nil) {
@@ -167,11 +170,13 @@ final class PairingPiPPresenter: NSObject, ObservableObject {
         enqueueCurrentFrame()
 
         dismissTimer?.invalidate()
-        dismissTimer = Timer.scheduledTimer(withTimeInterval: succeeded ? 3.5 : 4.0, repeats: false) { [weak self] _ in
+        let dTimer = Timer(timeInterval: succeeded ? 3.5 : 4.0, repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.teardown()
             }
         }
+        RunLoop.main.add(dTimer, forMode: .common)
+        dismissTimer = dTimer
     }
 
     func togglePiP() {
@@ -210,8 +215,12 @@ final class PairingPiPPresenter: NSObject, ObservableObject {
         pipController = nil
         hostView?.removeFromSuperview()
         hostView = nil
+        pixelBufferPool = nil
         isActive = false
         isPossible = false
+        if !BackgroundKeepAlive.hasActiveBackgroundSession {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     // MARK: - Setup & Frame Rendering
@@ -275,41 +284,70 @@ final class PairingPiPPresenter: NSObject, ObservableObject {
 
     private func startRefreshTimer() {
         refreshTimer?.invalidate()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.enqueueCurrentFrame()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        refreshTimer = timer
     }
 
     private func enqueueCurrentFrame() {
         guard let displayLayer = hostView?.displayLayer else { return }
         let renderer = displayLayer.sampleBufferRenderer
-        if renderer.status == .failed || frameCounter > 0 {
+        if renderer.status == .failed {
             renderer.flush()
         }
         guard let buffer = renderSampleBuffer() else { return }
         renderer.enqueue(buffer)
     }
 
-    private func renderSampleBuffer() -> CMSampleBuffer? {
-        let width = 640
-        let height = 224
-
-        let attrs: [CFString: Any] = [
+    private func ensurePixelBufferPool(width: Int, height: Int) -> CVPixelBufferPool? {
+        if let pixelBufferPool {
+            return pixelBufferPool
+        }
+        let poolAttrs: [CFString: Any] = [
+            kCVPixelBufferPoolMinimumBufferCountKey: 3,
+        ]
+        let bufferAttrs: [CFString: Any] = [
+            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey: width,
+            kCVPixelBufferHeightKey: height,
             kCVPixelBufferCGImageCompatibilityKey: true,
             kCVPixelBufferCGBitmapContextCompatibilityKey: true,
             kCVPixelBufferIOSurfacePropertiesKey: [:],
         ]
+        var pool: CVPixelBufferPool?
+        let status = CVPixelBufferPoolCreate(kCFAllocatorDefault, poolAttrs as CFDictionary, bufferAttrs as CFDictionary, &pool)
+        guard status == kCVReturnSuccess else { return nil }
+        pixelBufferPool = pool
+        return pool
+    }
+
+    private func renderSampleBuffer() -> CMSampleBuffer? {
+        let width = 640
+        let height = 224
+
         var pixelBuffer: CVPixelBuffer?
-        let status = CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            width,
-            height,
-            kCVPixelFormatType_32BGRA,
-            attrs as CFDictionary,
-            &pixelBuffer
-        )
+        let status: CVReturn
+        if let pool = ensurePixelBufferPool(width: width, height: height) {
+            status = CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &pixelBuffer)
+        } else {
+            let attrs: [CFString: Any] = [
+                kCVPixelBufferCGImageCompatibilityKey: true,
+                kCVPixelBufferCGBitmapContextCompatibilityKey: true,
+                kCVPixelBufferIOSurfacePropertiesKey: [:],
+            ]
+            status = CVPixelBufferCreate(
+                kCFAllocatorDefault,
+                width,
+                height,
+                kCVPixelFormatType_32BGRA,
+                attrs as CFDictionary,
+                &pixelBuffer
+            )
+        }
         guard status == kCVReturnSuccess, let pb = pixelBuffer else { return nil }
 
         CVPixelBufferLockBaseAddress(pb, [])
@@ -347,8 +385,8 @@ final class PairingPiPPresenter: NSObject, ObservableObject {
 
         frameCounter += 1
         var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: 1),
-            presentationTimeStamp: CMClockGetTime(CMClockGetHostTimeClock()),
+            duration: CMTime(value: 1, timescale: 30),
+            presentationTimeStamp: CMTime(value: frameCounter, timescale: 30),
             decodeTimeStamp: .invalid
         )
         var sampleBuffer: CMSampleBuffer?

@@ -23,16 +23,89 @@ static NSError *RLSockError(RLErrorCode code, NSString *message) {
 
 @interface RLTLSSocket () {
 @package
-    int _fd;
+    atomic_int _fd;
     int _wakePipe[2];
     atomic_bool _closedFlag;
+    atomic_bool _nudgedFlag;
     SSLContextRef _sslContext;
     CFAbsoluteTime _ioDeadline;
     NSMutableData *_readBuffer;
 }
 @end
 
-static int RLPollFD(int fd, int wakeFD, short events, CFAbsoluteTime deadline) {
+static BOOL RLVerifyPeerTrust(SSLContextRef ctx,
+                              SecCertificateRef _Nullable rootCert,
+                              SecCertificateRef _Nullable deviceCert,
+                              NSError * _Nullable * _Nullable error) {
+    if (!rootCert && !deviceCert) {
+        return YES;
+    }
+
+    SecTrustRef peerTrust = NULL;
+    OSStatus st = SSLCopyPeerTrust(ctx, &peerTrust);
+    if (st != errSecSuccess || !peerTrust) {
+        if (error) {
+            *error = RLSockError(RLErrorTLSHandshake, @"Missing peer TLS trust during lockdown handshake");
+        }
+        return NO;
+    }
+
+    CFArrayRef chain = SecTrustCopyCertificateChain(peerTrust);
+    CFIndex count = chain ? CFArrayGetCount(chain) : 0;
+    if (count == 0) {
+        if (chain) CFRelease(chain);
+        CFRelease(peerTrust);
+        if (error) {
+            *error = RLSockError(RLErrorTLSHandshake, @"Peer presented no TLS certificate");
+        }
+        return NO;
+    }
+
+    if (deviceCert) {
+        SecCertificateRef peerLeaf = (SecCertificateRef)CFArrayGetValueAtIndex(chain, 0);
+        SecKeyRef peerKey = peerLeaf ? SecCertificateCopyKey(peerLeaf) : NULL;
+        SecKeyRef expectedKey = SecCertificateCopyKey(deviceCert);
+        NSData *peerKeyData = peerKey ? CFBridgingRelease(SecKeyCopyExternalRepresentation(peerKey, NULL)) : nil;
+        NSData *expectedKeyData = expectedKey ? CFBridgingRelease(SecKeyCopyExternalRepresentation(expectedKey, NULL)) : nil;
+        if (peerKey) CFRelease(peerKey);
+        if (expectedKey) CFRelease(expectedKey);
+        CFRelease(chain);
+        CFRelease(peerTrust);
+
+        if (peerKeyData.length > 0 && [peerKeyData isEqualToData:expectedKeyData]) {
+            return YES;
+        }
+        if (error) {
+            *error = RLSockError(RLErrorTLSHandshake, @"Lockdown server certificate public key mismatch");
+        }
+        return NO;
+    }
+
+    CFRelease(chain);
+    SecPolicyRef policy = SecPolicyCreateBasicX509();
+    if (policy) {
+        SecTrustSetPolicies(peerTrust, policy);
+        CFRelease(policy);
+    }
+    NSArray *anchors = @[(__bridge id)rootCert];
+    SecTrustSetAnchorCertificates(peerTrust, (__bridge CFArrayRef)anchors);
+    SecTrustSetAnchorCertificatesOnly(peerTrust, true);
+
+    CFErrorRef trustErr = NULL;
+    BOOL trusted = SecTrustEvaluateWithError(peerTrust, &trustErr);
+    CFRelease(peerTrust);
+    if (!trusted) {
+        NSError *nsErr = CFBridgingRelease(trustErr);
+        if (error) {
+            *error = RLSockError(RLErrorTLSHandshake,
+                                 [NSString stringWithFormat:@"Lockdown server trust failed: %@", nsErr.localizedDescription ?: @"untrusted"]);
+        }
+        return NO;
+    }
+    return YES;
+}
+
+static int RLPollFD(int fd, int wakeFD, const atomic_bool *closedFlag, short events, CFAbsoluteTime deadline) {
     while (1) {
         CFAbsoluteTime remaining = deadline - CFAbsoluteTimeGetCurrent();
         if (remaining <= 0) {
@@ -64,8 +137,14 @@ static int RLPollFD(int fd, int wakeFD, short events, CFAbsoluteTime deadline) {
             continue;
         }
         if (nfds == 2 && (fds[1].revents & (POLLIN | POLLHUP | POLLERR))) {
-            errno = ECANCELED;
-            return -2; // cancelled via close
+            if (closedFlag && atomic_load(closedFlag)) {
+                errno = ECANCELED;
+                return -2; // cancelled via close
+            }
+            // Drain transient nudge wakeups and wake caller cleanly.
+            uint8_t drain[64];
+            while (read(wakeFD, drain, sizeof(drain)) > 0) {}
+            return 0;
         }
         if (fds[0].revents & (POLLERR | POLLNVAL)) {
             int soErr = 0;
@@ -83,7 +162,8 @@ static OSStatus RLSSLReadFunc(SSLConnectionRef connection, void *data, size_t *d
     size_t requested = *dataLength;
     *dataLength = 0;
 
-    if (atomic_load(&sock->_closedFlag) || sock->_fd < 0) {
+    int fd = atomic_load(&sock->_fd);
+    if (atomic_load(&sock->_closedFlag) || fd < 0) {
         return errSSLClosedAbort;
     }
 
@@ -96,7 +176,7 @@ static OSStatus RLSSLReadFunc(SSLConnectionRef connection, void *data, size_t *d
             return errSSLClosedAbort;
         }
 
-        ssize_t n = recv(sock->_fd, buf + totalRead, requested - totalRead, 0);
+        ssize_t n = recv(fd, buf + totalRead, requested - totalRead, 0);
         if (n > 0) {
             totalRead += (size_t)n;
             continue;
@@ -107,7 +187,7 @@ static OSStatus RLSSLReadFunc(SSLConnectionRef connection, void *data, size_t *d
         }
         if (errno == EINTR) continue;
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            int ready = RLPollFD(sock->_fd, sock->_wakePipe[0], POLLIN, sock->_ioDeadline);
+            int ready = RLPollFD(fd, sock->_wakePipe[0], &sock->_closedFlag, POLLIN, sock->_ioDeadline);
             if (ready > 0) continue;
             *dataLength = totalRead;
             if (ready == 0) return errSSLWouldBlock;
@@ -126,7 +206,8 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
     size_t requested = *dataLength;
     *dataLength = 0;
 
-    if (atomic_load(&sock->_closedFlag) || sock->_fd < 0) {
+    int fd = atomic_load(&sock->_fd);
+    if (atomic_load(&sock->_closedFlag) || fd < 0) {
         return errSSLClosedAbort;
     }
 
@@ -139,14 +220,14 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
             return errSSLClosedAbort;
         }
 
-        ssize_t n = send(sock->_fd, buf + totalWritten, requested - totalWritten, 0);
+        ssize_t n = send(fd, buf + totalWritten, requested - totalWritten, 0);
         if (n > 0) {
             totalWritten += (size_t)n;
             continue;
         }
         if (n < 0 && errno == EINTR) continue;
         if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-            int ready = RLPollFD(sock->_fd, sock->_wakePipe[0], POLLOUT, sock->_ioDeadline);
+            int ready = RLPollFD(fd, sock->_wakePipe[0], &sock->_closedFlag, POLLOUT, sock->_ioDeadline);
             if (ready > 0) continue;
             *dataLength = totalWritten;
             if (ready == 0) return errSSLWouldBlock;
@@ -166,7 +247,7 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
     self = [super init];
     if (!self) return nil;
 
-    _fd = fd;
+    atomic_init(&_fd, fd);
     _wakePipe[0] = -1;
     _wakePipe[1] = -1;
     if (pipe(_wakePipe) == 0) {
@@ -175,14 +256,15 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
     }
 
     int one = 1;
-    setsockopt(_fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
-    setsockopt(_fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
-    int flags = fcntl(_fd, F_GETFL, 0);
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+    int flags = fcntl(fd, F_GETFL, 0);
     if (flags >= 0) {
-        fcntl(_fd, F_SETFL, flags | O_NONBLOCK);
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     }
 
     atomic_init(&_closedFlag, false);
+    atomic_init(&_nudgedFlag, false);
     _sslContext = NULL;
     _readBuffer = [NSMutableData data];
     return self;
@@ -232,7 +314,7 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
             break;
         }
         if (errno == EINPROGRESS) {
-            int ready = RLPollFD(fd, -1, POLLOUT, deadline);
+            int ready = RLPollFD(fd, -1, NULL, POLLOUT, deadline);
             if (ready > 0) {
                 int soErr = 0;
                 socklen_t len = sizeof(soErr);
@@ -275,6 +357,10 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
         CFRelease(_sslContext);
         _sslContext = NULL;
     }
+    int fd = atomic_exchange(&_fd, -1);
+    if (fd >= 0) {
+        close(fd);
+    }
     if (_wakePipe[0] >= 0) {
         close(_wakePipe[0]);
         _wakePipe[0] = -1;
@@ -294,6 +380,18 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
 }
 
 - (BOOL)upgradeToTLSWithCertificates:(NSArray *)certificates
+                             timeout:(NSTimeInterval)timeout
+                               error:(NSError * _Nullable * _Nullable)error {
+    return [self upgradeToTLSWithCertificates:certificates
+                              rootCertificate:NULL
+                            deviceCertificate:NULL
+                                      timeout:timeout
+                                        error:error];
+}
+
+- (BOOL)upgradeToTLSWithCertificates:(NSArray *)certificates
+                     rootCertificate:(nullable SecCertificateRef)rootCertificate
+                   deviceCertificate:(nullable SecCertificateRef)deviceCertificate
                              timeout:(NSTimeInterval)timeout
                                error:(NSError * _Nullable * _Nullable)error {
     if (self.isClosed) {
@@ -334,7 +432,10 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
             break;
         }
         if (st == errSSLServerAuthCompleted) {
-            // Peer lockdownd certificate is self-signed by the pairing RootCertificate; proceed.
+            if (!RLVerifyPeerTrust(ctx, rootCertificate, deviceCertificate, error)) {
+                CFRelease(ctx);
+                return NO;
+            }
             continue;
         }
         if (st == errSSLWouldBlock) {
@@ -395,16 +496,24 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
             }
             return NO;
         } else {
-            ssize_t n = send(_fd, bytes + offset, total - offset, 0);
+            int fd = atomic_load(&_fd);
+            if (fd < 0) {
+                if (error) *error = RLSockError(RLErrorSocketClosed, @"Socket is closed");
+                return NO;
+            }
+            ssize_t n = send(fd, bytes + offset, total - offset, 0);
             if (n > 0) {
                 offset += (size_t)n;
                 continue;
             }
             if (n < 0 && errno == EINTR) continue;
             if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                int ready = RLPollFD(_fd, _wakePipe[0], POLLOUT, _ioDeadline);
+                int ready = RLPollFD(fd, _wakePipe[0], &_closedFlag, POLLOUT, _ioDeadline);
                 if (ready > 0) continue;
                 if (ready == 0) {
+                    if (CFAbsoluteTimeGetCurrent() < _ioDeadline) {
+                        continue;
+                    }
                     if (error) *error = RLSockError(RLErrorSocketTimeout, @"Socket write timed out");
                 } else {
                     if (error) *error = RLSockError(RLErrorSocketClosed, @"Socket closed during write");
@@ -459,7 +568,8 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
             if (st == errSecSuccess) continue;
             if (st == errSSLWouldBlock) {
                 if (_readBuffer.length >= length) break;
-                if (CFAbsoluteTimeGetCurrent() >= _ioDeadline) {
+                if (CFAbsoluteTimeGetCurrent() >= _ioDeadline ||
+                    (_readBuffer.length == 0 && atomic_exchange(&_nudgedFlag, false))) {
                     if (timedOut) *timedOut = YES;
                     return nil;
                 }
@@ -475,7 +585,12 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
             }
             return nil;
         } else {
-            ssize_t n = recv(_fd, scratch, need, 0);
+            int fd = atomic_load(&_fd);
+            if (fd < 0) {
+                if (error) *error = RLSockError(RLErrorSocketClosed, @"Socket is closed");
+                return nil;
+            }
+            ssize_t n = recv(fd, scratch, need, 0);
             if (n > 0) {
                 [_readBuffer appendBytes:scratch length:(size_t)n];
                 continue;
@@ -486,11 +601,15 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
             }
             if (errno == EINTR) continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                int ready = RLPollFD(_fd, _wakePipe[0], POLLIN, _ioDeadline);
+                int ready = RLPollFD(fd, _wakePipe[0], &_closedFlag, POLLIN, _ioDeadline);
                 if (ready > 0) continue;
                 if (ready == 0) {
-                    if (timedOut) *timedOut = YES;
-                    return nil;
+                    if (CFAbsoluteTimeGetCurrent() >= _ioDeadline ||
+                        (_readBuffer.length == 0 && atomic_exchange(&_nudgedFlag, false))) {
+                        if (timedOut) *timedOut = YES;
+                        return nil;
+                    }
+                    continue;
                 }
                 if (error) *error = RLSockError(RLErrorSocketClosed, @"Socket closed during read");
                 return nil;
@@ -508,6 +627,17 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
     return slice;
 }
 
+- (void)nudge {
+    if (atomic_load(&_closedFlag)) {
+        return;
+    }
+    atomic_store(&_nudgedFlag, true);
+    if (_wakePipe[1] >= 0) {
+        uint8_t byte = 'W';
+        (void)write(_wakePipe[1], &byte, 1);
+    }
+}
+
 - (void)close {
     bool expected = false;
     if (atomic_compare_exchange_strong(&_closedFlag, &expected, true)) {
@@ -515,10 +645,9 @@ static OSStatus RLSSLWriteFunc(SSLConnectionRef connection, const void *data, si
             uint8_t byte = 1;
             (void)write(_wakePipe[1], &byte, 1);
         }
-        if (_fd >= 0) {
-            shutdown(_fd, SHUT_RDWR);
-            close(_fd);
-            _fd = -1;
+        int fd = atomic_load(&_fd);
+        if (fd >= 0) {
+            shutdown(fd, SHUT_RDWR);
         }
     }
 }

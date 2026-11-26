@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <Security/Security.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -27,6 +28,14 @@ NS_ASSUME_NONNULL_BEGIN
                              timeout:(NSTimeInterval)timeout
                                error:(NSError * _Nullable * _Nullable)error;
 
+/// Upgrades the connected TCP stream to mutual TLS and pins the peer server certificate
+/// against the pairing record's DeviceCertificate / RootCertificate when provided.
+- (BOOL)upgradeToTLSWithCertificates:(NSArray *)certificates
+                     rootCertificate:(nullable SecCertificateRef)rootCertificate
+                   deviceCertificate:(nullable SecCertificateRef)deviceCertificate
+                             timeout:(NSTimeInterval)timeout
+                               error:(NSError * _Nullable * _Nullable)error;
+
 /// Writes all bytes in `data` within `timeout` seconds.
 - (BOOL)writeData:(NSData *)data
           timeout:(NSTimeInterval)timeout
@@ -39,6 +48,9 @@ NS_ASSUME_NONNULL_BEGIN
                              timeout:(NSTimeInterval)timeout
                             timedOut:(BOOL * _Nullable)timedOut
                                error:(NSError * _Nullable * _Nullable)error;
+
+/// Wakes an idle in-flight read at a clean packet boundary without closing the socket.
+- (void)nudge;
 
 /// Thread-safe immediate close; unblocks any in-flight read/write/handshake.
 - (void)close;
