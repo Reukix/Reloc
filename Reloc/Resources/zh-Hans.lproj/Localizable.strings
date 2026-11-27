@@ -108,8 +108,8 @@
 
 "map.live.confirmed.title" = "外设 GPS 已 100% 生效";
 "map.live.confirmed.subtitle" = "系统已确认外设来源（isProducedByAccessory = true），可直接切去任意 App";
-"map.live.waiting_sub.detail" = "MFi 鉴权已通过，但系统尚未订阅外设 GPS。点击下方一键刷新（含悬浮 5 秒倒计时）即可唤醒订阅。";
-"map.live.pending_lock.detail" = "NMEA 已连通，但系统仍在沿用本机缓存定位。点击下方一键刷新（含悬浮 5 秒倒计时）即可 100% 强制切换。";
+"map.live.waiting_sub.detail" = "MFi 鉴权已通过，但系统尚未订阅外设 GPS。点击下方一键刷新（含悬浮 7 秒倒计时）即可唤醒订阅。";
+"map.live.pending_lock.detail" = "NMEA 已连通，但系统仍在沿用本机缓存定位。点击下方一键刷新（含悬浮 7 秒倒计时）即可 100% 强制切换。";
 "map.live.refresh_button" = "一键刷新定位服务（浮窗指引）";
 "map.live.connecting" = "正在建立本机外设通道并完成 MFi 鉴权…";
 "map.live.waking_sub" = "鉴权成功，正在自动唤醒系统外设 GPS 订阅…";
@@ -176,8 +176,8 @@
 "pip.preparing.headline" = "准备刷新定位服务…";
 "pip.preparing.subtitle" = "请按浮窗指引关闭再开启定位服务";
 "pip.step1.headline" = "① 关闭系统「定位服务」";
-"pip.step1.subtitle" = "关闭后将自动开始 5 秒倒计时，无需手动计时";
-"pip.step1.restore.subtitle" = "清空外设残留缓存，关闭后自动开始 5 秒倒计时";
+"pip.step1.subtitle" = "关闭后将自动开始 7 秒倒计时，无需手动计时";
+"pip.step1.restore.subtitle" = "清空外设残留缓存，关闭后自动开始 7 秒倒计时";
 "pip.step2.headline" = "② 正在清空系统定位缓存";
 "pip.step2.restore.headline" = "② 正在清空外设残留缓存";
 "pip.step2.subtitle" = "请保持「定位服务」关闭，等待倒计时结束";

@@ -20,6 +20,7 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
     private var observersInstalled = false
     private var hasRequestedAlwaysUpgrade = false
     private var lastAuthStatus: CLAuthorizationStatus?
+    private var lastRefreshToggleAt: CFAbsoluteTime = 0
     public var onDiagnostic: ((String, [String: Any]) -> Void)?
 
     private static let keepAliveWAVData: Data = makeInaudibleKeepAliveWAV(durationSeconds: 4, sampleRate: 8000)
@@ -176,8 +177,17 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
     /// because turning Location Services off invalidates the previous CLBackgroundActivitySession.
     public func refreshAfterLocationToggle() {
         guard isActive else { return }
+        let status = locationManager.authorizationStatus
+        // Ignore early 0xFFFA callbacks while CoreLocation still reports denied/restricted;
+        // restarting CLBackgroundActivitySession before authorization recovers causes a 0xFFFC/0xFFFA bounce loop.
+        guard status == .authorizedAlways || status == .authorizedWhenInUse else { return }
+        let now = CFAbsoluteTimeGetCurrent()
+        guard now - lastRefreshToggleAt >= 1.5 else { return }
+        lastRefreshToggleAt = now
         renewBackgroundTask()
-        startBackgroundLocation(forceRestart: true)
+        (backgroundActivitySession as? CLBackgroundActivitySession)?.invalidate()
+        backgroundActivitySession = CLBackgroundActivitySession()
+        startBackgroundLocation(forceRestart: false)
         if wantSilentAudio {
             startResilientAudioKeepAlive()
         }

@@ -920,7 +920,7 @@ public final class RelocViewModel: ObservableObject {
     private func startRestoreRefreshCountdown() {
         refreshCountdownTask?.cancel()
         refreshCountdownTask = Task { @MainActor [weak self] in
-            for remaining in stride(from: 5, through: 1, by: -1) {
+            for remaining in stride(from: 7, through: 1, by: -1) {
                 guard !Task.isCancelled, let self, self.isRestoreRefreshGuideActive else { return }
                 LocationRefreshPresenter.shared.updateLocationRefresh(
                     step: 2,
@@ -1222,7 +1222,7 @@ public final class RelocViewModel: ObservableObject {
         locationRefreshSawDisabled = false
         lastRestoreAuthStatus = coreLocation.authorizationStatus
         LocationRefreshPresenter.shared.startLocationRefreshGuide()
-        session?.triggerFastBurst(seconds: 30.0)
+        session?.triggerFastBurst(seconds: 45.0)
         // Wait briefly for PiP to enter smoothly before switching to Settings (prevents stutter).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
             guard let self, self.isLocationRefreshGuideActive, self.snapshot.isRunning else { return }
@@ -1251,7 +1251,7 @@ public final class RelocViewModel: ObservableObject {
     private func startLocationRefreshCountdown() {
         refreshCountdownTask?.cancel()
         refreshCountdownTask = Task { @MainActor [weak self] in
-            for remaining in stride(from: 5, through: 1, by: -1) {
+            for remaining in stride(from: 7, through: 1, by: -1) {
                 guard !Task.isCancelled, let self, self.isLocationRefreshGuideActive else { return }
                 LocationRefreshPresenter.shared.updateLocationRefresh(
                     step: 2,

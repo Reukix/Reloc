@@ -108,8 +108,8 @@
 
 "map.live.confirmed.title" = "Accessory GPS Active";
 "map.live.confirmed.subtitle" = "Verified external source (isProducedByAccessory = true). Safe to switch apps.";
-"map.live.waiting_sub.detail" = "MFi auth succeeded, but iOS hasn't subscribed to accessory GPS yet. Tap below for a 1-tap refresh (with 5s PiP timer).";
-"map.live.pending_lock.detail" = "NMEA connected, but iOS is still holding its cached location. Tap below for a 1-tap refresh (with 5s PiP timer).";
+"map.live.waiting_sub.detail" = "MFi auth succeeded, but iOS hasn't subscribed to accessory GPS yet. Tap below for a 1-tap refresh (with 7s PiP timer).";
+"map.live.pending_lock.detail" = "NMEA connected, but iOS is still holding its cached location. Tap below for a 1-tap refresh (with 7s PiP timer).";
 "map.live.refresh_button" = "1-Tap Refresh Location Services (PiP Guide)";
 "map.live.connecting" = "Creating local accessory channel & MFi auth…";
 "map.live.waking_sub" = "Authenticated. Waking system accessory GPS subscription…";
@@ -176,8 +176,8 @@
 "pip.preparing.headline" = "Preparing Location Refresh…";
 "pip.preparing.subtitle" = "Follow the floating guide to toggle Location Services";
 "pip.step1.headline" = "① Turn OFF Location Services";
-"pip.step1.subtitle" = "A 5-second countdown starts automatically once off";
-"pip.step1.restore.subtitle" = "Clears accessory cache; 5s countdown starts automatically";
+"pip.step1.subtitle" = "A 7-second countdown starts automatically once off";
+"pip.step1.restore.subtitle" = "Clears accessory cache; 7s countdown starts automatically";
 "pip.step2.headline" = "② Clearing System Location Cache";
 "pip.step2.restore.headline" = "② Clearing Accessory Cache";
 "pip.step2.subtitle" = "Keep Location Services OFF until the timer finishes";
