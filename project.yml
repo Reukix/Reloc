@@ -37,8 +37,8 @@ targets:
       path: Reloc/Info.plist
       properties:
         CFBundleDisplayName: Reloc
-        CFBundleShortVersionString: "1.0.3"
-        CFBundleVersion: "4"
+        CFBundleShortVersionString: "1.0.4"
+        CFBundleVersion: "5"
         LSRequiresIPhoneOS: true
         LSSupportsOpeningDocumentsInPlace: true
         UIFileSharingEnabled: true

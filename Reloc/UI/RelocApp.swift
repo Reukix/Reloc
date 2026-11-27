@@ -19,30 +19,24 @@ struct ContentView: View {
     @State private var selectedTab = 0
 
     var body: some View {
-        Group {
-            if viewModel.isUnsupportedIPad {
-                UnsupportedIPadView()
-            } else {
-                TabView(selection: $selectedTab) {
-                    MapPickerView(viewModel: viewModel, switchToConfig: { selectedTab = 1 })
-                        .tabItem {
-                            Label(L10n.tr("tab.location"), systemImage: "location.north.circle.fill")
-                        }
-                        .tag(0)
-
-                    ConfigurationView(viewModel: viewModel)
-                        .tabItem {
-                            Label(L10n.tr("tab.settings"), systemImage: "gearshape.fill")
-                        }
-                        .tag(1)
-
-                    ProtocolLogsView(viewModel: viewModel)
-                        .tabItem {
-                            Label(L10n.tr("tab.logs"), systemImage: "waveform.path.ecg")
-                        }
-                        .tag(2)
+        TabView(selection: $selectedTab) {
+            MapPickerView(viewModel: viewModel, switchToConfig: { selectedTab = 1 })
+                .tabItem {
+                    Label(L10n.tr("tab.location"), systemImage: "location.north.circle.fill")
                 }
-            }
+                .tag(0)
+
+            ConfigurationView(viewModel: viewModel)
+                .tabItem {
+                    Label(L10n.tr("tab.settings"), systemImage: "gearshape.fill")
+                }
+                .tag(1)
+
+            ProtocolLogsView(viewModel: viewModel)
+                .tabItem {
+                    Label(L10n.tr("tab.logs"), systemImage: "waveform.path.ecg")
+                }
+                .tag(2)
         }
         .alert(L10n.tr("common.alert.title"), isPresented: Binding(
             get: { viewModel.alertMessage != nil },
@@ -54,44 +48,5 @@ struct ContentView: View {
         } message: {
             Text(viewModel.alertMessage ?? "")
         }
-    }
-}
-
-private struct UnsupportedIPadView: View {
-    var body: some View {
-        VStack(spacing: 20) {
-            ZStack {
-                Circle()
-                    .fill(RelocTheme.amber.opacity(0.16))
-                    .frame(width: 88, height: 88)
-                Image(systemName: "ipad")
-                    .font(.system(size: 38, weight: .semibold))
-                    .foregroundStyle(RelocTheme.amber)
-                Image(systemName: "slash.circle.fill")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(RelocTheme.crimson)
-                    .background(Color(.systemGroupedBackground), in: Circle())
-                    .offset(x: 24, y: 22)
-            }
-
-            VStack(spacing: 10) {
-                Text(L10n.tr("ipad.unavailable.title"))
-                    .font(.title2.weight(.bold))
-
-                Text(L10n.tr("ipad.unavailable.subtitle"))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(RelocTheme.amber)
-
-                Text(L10n.tr("ipad.unavailable.body"))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-                    .frame(maxWidth: 420)
-            }
-        }
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemGroupedBackground).ignoresSafeArea())
     }
 }

@@ -1,12 +1,12 @@
 <div align="center">
   <img src="docs/icon.png" alt="Reloc Icon" width="96" height="96" />
   <h1>Reloc</h1>
-  <p><strong>面向 iPhone 的本机虚拟外设定位模拟工具</strong></p>
+  <p><strong>面向 iPhone 与 iPad 的本机虚拟外设定位模拟工具</strong></p>
   <p>
-    基于 Swift 与 Objective-C 构建 · 通过 CoreAccessories 本机虚拟外设实现 iAP2 / MFi-v3 / NMEA 定位注入
+    基于 Swift 与 Objective-C 构建 · 支持简体中文与英文 · 通过本机虚拟外设实现外设级定位注入
   </p>
   <p>
-    <a href="#系统兼容性"><img src="https://img.shields.io/badge/Platform-iOS%2017.0%2B-0A84FF?style=flat-square" height="20" /></a>
+    <a href="#系统兼容性"><img src="https://img.shields.io/badge/Platform-iOS%20%7C%20iPadOS%2017.0%2B-0A84FF?style=flat-square" height="20" /></a>
     <a href="#从源码构建"><img src="https://img.shields.io/badge/Stack-Swift%20%7C%20ObjC-F05138?style=flat-square" height="20" /></a>
     <a href="#免责声明与许可证"><img src="https://img.shields.io/badge/License-AGPL--3.0-red?style=flat-square" height="20" /></a>
   </p>
@@ -16,9 +16,9 @@
 
 ## 简介
 
-**Reloc** 是一款运行在 iPhone 本机的外设级定位模拟应用。应用直接通过系统 `CoreAccessories` 在本机创建虚拟外设连接与 iAP2 端点，完成 iAP2 链路同步、MFi-v3 鉴权及 NMEA-0183（`$GPGGA` / `$GPRMC`）报文流式下发，使系统以标准外设 GPS 身份接收实时坐标。
+**Reloc** 是一款运行在 iPhone 与 iPad 本机的外设级定位模拟应用。应用直接通过系统 `CoreAccessories` 在本机创建虚拟外设连接与 iAP2 端点，完成 iAP2 链路同步、MFi-v3 鉴权及 NMEA-0183（`$GPGGA` / `$GPRMC`）报文流式下发，使系统以标准外设 GPS 身份接收实时坐标。
 
-**无需实体外设、无需电脑、无需设备配对文件、无需代理回环或 VPN**，单机即可完成定位注入。
+**无需实体外设、无需电脑、无需设备配对文件、无需代理回环、VPN 或依赖 Wi-Fi**，蜂窝网络下同样可单机完成定位注入。
 
 ---
 
@@ -30,7 +30,7 @@
 | **多源地图与纠偏** | 默认使用 **Apple 地图（MapKit 原生）** 并支持中国大陆 GCJ-02 ↔ WGS-84 自动双向纠偏；同时内置免 API Key 的 **全球街道图（Esri） / OpenStreetMap / 全球卫星图** 纯原生 WGS-84 瓦片地图（无高德字样）；可选 ±0.6 m 自然微漂移（含细微海拔波动） |
 | **本机直连与刷新** | 直接在本机创建虚拟外设通道，断线自动退避重连；系统缓存顽固时提供 **一键刷新定位服务（画中画悬浮 7 秒倒计时）**；停止时自动释放本机端点并支持真实定位恢复 |
 | **后台保活** | 后台定位与音频保活双保险、断线自动重连，切换到其他 App 后持续生效 |
-| **数据与实测** | 收藏夹、最近记录、异常中断一键恢复；内置 `CoreLocation` 实测面板（外设来源标志 `isProducedByAccessory` / 模拟标志 `isSimulatedBySoftware`）与协议日志 |
+| **数据与实测** | 收藏夹、最近记录、异常中断一键恢复；内置简体中文与英文双语切换；内置 `CoreLocation` 实测面板（外设来源标志 `isProducedByAccessory` / 模拟标志 `isSimulatedBySoftware`）与协议日志 |
 
 ---
 
@@ -38,8 +38,8 @@
 
 | 设备 / 系统 | 支持状态 | 说明 |
 | :--- | :---: | :--- |
-| **iPhone · iOS 17.0+** | 支持 | 最低构建目标为 iOS 17.0；已在未越狱的 iPhone 16 Pro / iOS 27.0.1 上验证通过，其他系统版本的私有接口兼容性仍需实测 |
-| **iPad（iPadOS）** | 暂不支持 | 当前仅开放 iPhone，尚未验证 iPad，启动时将提示设备不可用 |
+| **iPhone · iOS 17.0+** | 支持 | 最低构建目标为 iOS 17.0；已在未越狱真机上验证通过，其他系统版本仍需实测 |
+| **iPad · iPadOS 17.0+** | 支持 | 已开放 iPad 支持并在真机测试通过，支持 Wi-Fi 与蜂窝版 iPad |
 
 > 本机虚拟外设通道仍需有效的 **MFi-v3** 凭据才能通过系统的外设鉴权。
 
@@ -119,12 +119,6 @@ iAP2 握手与 NMEA ACK 仅表示数据已成功发送至本机虚拟外设通�
 <summary><strong>3. 为什么默认 Apple 地图在中国大陆会显示「高德地图」？</strong></summary>
 
 受中国大陆测绘合规要求影响，iOS 原生 `MapKit` 在中国大陆环境下会自动使用高德地图底图与角标。如需无高德字样的纯国际 WGS-84 地图，可在地图右侧图层按钮或 **「设置」** 页切换为 **全球街道图 / OpenStreetMap / 全球卫星图**（全部免 API Key）。
-</details>
-
-<details>
-<summary><strong>4. 为什么 iPad 无法使用 Reloc？</strong></summary>
-
-当前版本的本机虚拟外设定位通道仅在 iPhone 上完成验证，暂未对 iPad 开放支持，因此 iPad 启动时会直接提示设备不可用。
 </details>
 
 ---

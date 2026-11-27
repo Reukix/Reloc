@@ -648,29 +648,15 @@ public final class RelocViewModel: ObservableObject {
         store.saveInterruptedSession(rec)
     }
 
-    // MARK: - Device Compatibility
-
-    public var isUnsupportedIPad: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad
-    }
-
-    public static var unsupportedIPadMessage: String {
-        L10n.tr("ipad.unavailable.alert")
-    }
-
     // MARK: - Session Readiness
 
     public var canStartSession: Bool {
-        !isUnsupportedIPad && mfiSigner != nil && !snapshot.isRunning
+        mfiSigner != nil && !snapshot.isRunning
     }
 
     // MARK: - Location Injection Session
 
     public func start(mode: SessionMode) {
-        if isUnsupportedIPad {
-            alertMessage = Self.unsupportedIPadMessage
-            return
-        }
         guard !snapshot.isRunning else { return }
         guard let mfiSigner else {
             alertMessage = L10n.tr("error.mfi_unavailable")

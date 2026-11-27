@@ -16,12 +16,6 @@
 "common.restore" = "恢复";
 "common.enable" = "去开启";
 
-/* Unsupported iPad */
-"ipad.unavailable.title" = "当前设备不可用";
-"ipad.unavailable.subtitle" = "Reloc 仅支持 iPhone";
-"ipad.unavailable.body" = "当前版本的本机外设定位通道仅在 iPhone 上完成验证，暂未开放 iPad 使用。";
-"ipad.unavailable.alert" = "当前版本仅在 iPhone 上完成验证，暂不支持 iPad。";
-
 /* Appearance, Map Sources & Styles */
 "appearance.system" = "跟随系统";
 "appearance.light" = "浅色";

@@ -16,12 +16,6 @@
 "common.restore" = "Resume";
 "common.enable" = "Open Settings";
 
-/* Unsupported iPad */
-"ipad.unavailable.title" = "Device Not Supported";
-"ipad.unavailable.subtitle" = "Reloc only supports iPhone";
-"ipad.unavailable.body" = "The local virtual accessory location channel in this version has only been verified on iPhone and is not yet available on iPad.";
-"ipad.unavailable.alert" = "This version has only been verified on iPhone and does not support iPad yet.";
-
 /* Appearance, Map Sources & Styles */
 "appearance.system" = "Follow System";
 "appearance.light" = "Light";
