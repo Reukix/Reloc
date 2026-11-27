@@ -3,7 +3,7 @@ import CoreLocation
 import Foundation
 import UIKit
 
-/// Keeps Reloc genuinely alive in the background while injecting coordinates over 10.7.0.1
+/// Keeps Reloc genuinely alive in the background while streaming coordinates through the local accessory endpoint
 /// AND keeps `locationd` continuously subscribed (0xFFFA) to the external accessory GPS.
 @MainActor
 public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
@@ -264,7 +264,7 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
     private func stopAudioKeepAlive(deactivateSession: Bool = true) {
         audioPlayer?.stop()
         audioPlayer = nil
-        if deactivateSession && !PairingPiPPresenter.shared.isActive {
+        if deactivateSession && !LocationRefreshPresenter.shared.isActive {
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
@@ -328,6 +328,12 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
         )
         NotificationCenter.default.addObserver(
             self,
+            selector: #selector(handleAudioRouteChange(_:)),
+            name: AVAudioSession.routeChangeNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
             selector: #selector(handleDidEnterBackground),
             name: UIApplication.didEnterBackgroundNotification,
             object: nil
@@ -357,6 +363,14 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
         guard isActive, wantSilentAudio else { return }
         audioPlayer = nil
         startResilientAudioKeepAlive()
+    }
+
+    @objc private func handleAudioRouteChange(_ notification: Notification) {
+        guard isActive, wantSilentAudio else { return }
+        if !(audioPlayer?.isPlaying ?? false) {
+            startResilientAudioKeepAlive()
+            emitStatus("audio_route_resumed")
+        }
     }
 
     @objc private func handleDidEnterBackground() {
@@ -396,6 +410,15 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
             } else if self.locationSubscriptionActive {
                 self.startBackgroundLocation()
             }
+        }
+    }
+
+    public nonisolated func locationManagerDidPauseLocationUpdates(_ manager: CLLocationManager) {
+        Task { @MainActor in
+            guard self.isActive, self.locationSubscriptionActive else { return }
+            self.isLocationUpdating = false
+            self.startBackgroundLocation()
+            self.emitStatus("keepalive_location_resumed_after_pause")
         }
     }
 

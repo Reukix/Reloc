@@ -9,6 +9,7 @@ struct RelocApp: App {
             ContentView(viewModel: viewModel)
                 .tint(RelocTheme.accent)
                 .preferredColorScheme(viewModel.appearanceMode.colorScheme)
+                .environment(\.locale, viewModel.appLanguage.locale)
         }
     }
 }
@@ -25,33 +26,29 @@ struct ContentView: View {
                 TabView(selection: $selectedTab) {
                     MapPickerView(viewModel: viewModel, switchToConfig: { selectedTab = 1 })
                         .tabItem {
-                            Label("定位", systemImage: "location.north.circle.fill")
+                            Label(L10n.tr("tab.location"), systemImage: "location.north.circle.fill")
                         }
                         .tag(0)
 
                     ConfigurationView(viewModel: viewModel)
                         .tabItem {
-                            Label("设备连接", systemImage: "antenna.radiowaves.left.and.right")
+                            Label(L10n.tr("tab.settings"), systemImage: "gearshape.fill")
                         }
                         .tag(1)
 
                     ProtocolLogsView(viewModel: viewModel)
                         .tabItem {
-                            Label("实测与日志", systemImage: "waveform.path.ecg")
+                            Label(L10n.tr("tab.logs"), systemImage: "waveform.path.ecg")
                         }
                         .tag(2)
                 }
-                .onOpenURL { url in
-                    viewModel.importPairingFile(url: url)
-                    selectedTab = 1
-                }
             }
         }
-        .alert("提示", isPresented: Binding(
+        .alert(L10n.tr("common.alert.title"), isPresented: Binding(
             get: { viewModel.alertMessage != nil },
             set: { if !$0 { viewModel.alertMessage = nil } }
         )) {
-            Button("确定", role: .cancel) {
+            Button(L10n.tr("common.ok"), role: .cancel) {
                 viewModel.alertMessage = nil
             }
         } message: {
@@ -78,14 +75,14 @@ private struct UnsupportedIPadView: View {
             }
 
             VStack(spacing: 10) {
-                Text("当前设备不可用")
+                Text(L10n.tr("ipad.unavailable.title"))
                     .font(.title2.weight(.bold))
 
-                Text("Reloc 仅支持 iPhone")
+                Text(L10n.tr("ipad.unavailable.subtitle"))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(RelocTheme.amber)
 
-                Text("Reloc 依赖 iOS 的 CarKit（com.apple.carkit.service）外设定位通道向系统注入 GPS 坐标。由于 iPadOS 不支持 CarPlay 且未提供该系统服务，此应用无法在 iPad 上运行定位模拟。")
+                Text(L10n.tr("ipad.unavailable.body"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
