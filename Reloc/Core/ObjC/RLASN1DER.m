@@ -13,7 +13,7 @@ BOOL RLDERReadElement(const uint8_t *bytes,
                       NSUInteger offset,
                       RLDERElement *outElement,
                       NSError * _Nullable * _Nullable error) {
-    if (!bytes || offset + 2 > limit) {
+    if (!bytes || offset > limit || limit - offset < 2) {
         if (error) *error = RLMakeError(RLErrorInvalidASN1, @"Truncated ASN.1 DER element");
         return NO;
     }
@@ -27,7 +27,7 @@ BOOL RLDERReadElement(const uint8_t *bytes,
         valueLen = firstLen;
     } else {
         uint8_t octets = firstLen & 0x7F;
-        if (octets == 0 || octets > 4 || cursor + octets > limit) {
+        if (octets == 0 || octets > 4 || limit - cursor < octets) {
             if (error) *error = RLMakeError(RLErrorInvalidASN1, @"Unsupported or truncated DER length");
             return NO;
         }

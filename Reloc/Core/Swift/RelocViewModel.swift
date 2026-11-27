@@ -148,18 +148,23 @@ public final class RelocViewModel: ObservableObject {
     @Published public var isRestoringRealLocation = false
     @Published public var needsRestoreLocationRefresh = false
     @Published public var realLocationRestoredNotice = false
+    @Published public private(set) var locationAuthorizationStatus: CLAuthorizationStatus = .notDetermined
+    @Published public private(set) var isLocationReducedAccuracy = false
     @Published public var events: [ProtocolEvent] = []
     @Published public var alertMessage: String?
 
     private var savedPairing: SavedPairing?
     private var mfiSigner: RLMFiSigner?
     private var session: AccessoryLocationSession?
+    private var lastKnownRealLocation: TargetLocation?
     private var jitterTimer: Timer?
     private var subscriptionPulseTask: Task<Void, Never>?
     private var lockWatchdogTask: Task<Void, Never>?
     private var refreshCountdownTask: Task<Void, Never>?
     private var locationStopDebounceTask: Task<Void, Never>?
     private var locationRefreshSawDisabled = false
+    private var didAutoReconnectForSubscription = false
+    private var loggedReducedAccuracyForSession = false
     private var restoreTask: Task<Void, Never>?
     private var isRestoreRefreshGuideActive = false
     private var lastRestoreAuthStatus: CLAuthorizationStatus = .notDetermined
@@ -187,6 +192,8 @@ public final class RelocViewModel: ObservableObject {
         self.recents = store.loadRecents()
         self.interruptedSession = store.loadInterruptedSession()
         self.deviceUDID = store.deviceUDID
+        self.locationAuthorizationStatus = coreLocation.authorizationStatus
+        self.isLocationReducedAccuracy = coreLocation.isReducedAccuracy
 
         self.mfiSigner = store.loadBundledMFiSigner()
 
@@ -222,9 +229,24 @@ public final class RelocViewModel: ObservableObject {
             .store(in: &cancellables)
 
         self.coreLocation.$authorizationStatus
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .sink { [weak self] status in
-                self?.handleCoreLocationAuthChangeForRestore(status)
+                guard let self else { return }
+                if self.locationAuthorizationStatus != status {
+                    self.locationAuthorizationStatus = status
+                }
+                self.isLocationReducedAccuracy = self.coreLocation.isReducedAccuracy
+                self.handleCoreLocationAuthChangeForRestore(status)
+            }
+            .store(in: &cancellables)
+
+        self.coreLocation.$accuracyAuthorization
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.isLocationReducedAccuracy = self.coreLocation.isReducedAccuracy
             }
             .store(in: &cancellables)
     }
@@ -326,8 +348,8 @@ public final class RelocViewModel: ObservableObject {
         targetLocation = pending
         pendingLocation = nil
         isAccessoryLocationConfirmed = false
-        session?.markCoreLocationConfirmed(false)
-        session?.triggerFastBurst(seconds: 8.0)
+        needsLocationServiceRefresh = false
+        session?.notifyLocationUpdated(resetKalman: true, burstSeconds: 10.0)
         recordRecent(name: selectedPlaceName, subtitle: selectedPlaceAddress, location: targetLocation)
         persistRecoveryRecord()
         if snapshot.isRunning {
@@ -673,7 +695,9 @@ public final class RelocViewModel: ObservableObject {
             return
         }
         guard !snapshot.isRunning, !isVerifyingConnection else { return }
-        DevicePairingCoordinator.shared.start { [weak self] rawRecord, hostIRK, udid in
+        DevicePairingCoordinator.shared.start(
+            existingRequest: store.loadOnDeviceRepairingRequest()
+        ) { [weak self] rawRecord, hostIRK, udid in
             guard let self else { return }
             _ = try self.store.saveOnDevicePairedIdentity(rawRecord, hostIRK: hostIRK, udid: udid)
             self.reloadPairing()
@@ -810,6 +834,8 @@ public final class RelocViewModel: ObservableObject {
         isAccessoryLocationConfirmed = false
         needsLocationServiceRefresh = false
         isLocationRefreshGuideActive = false
+        didAutoReconnectForSubscription = false
+        loggedReducedAccuracyForSession = false
         cancelRestoreRecovery()
         injectionPhase = .connecting
         cancelTriggerTasks()
@@ -818,11 +844,13 @@ public final class RelocViewModel: ObservableObject {
         // and poison `locationd`'s fusion cache with a fresh real location.
         keepAlive.prepareForSession(useSilentAudio: backgroundKeepAliveEnabled)
 
+        let sessionID = UUID()
         let newSession = AccessoryLocationSession(
+            id: sessionID,
             initialLocation: targetLocation,
             onEvent: { [weak self] event in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self, self.session?.id == sessionID else { return }
                     self.events.append(event)
                     if self.events.count > 500 {
                         self.events.removeFirst(self.events.count - 500)
@@ -831,10 +859,11 @@ public final class RelocViewModel: ObservableObject {
             },
             onSnapshot: { [weak self] snap in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self, self.session?.id == sessionID else { return }
                     self.snapshot = snap
                     self.updateInjectionPhase()
                     if !snap.isRunning {
+                        self.session = nil
                         self.cancelTriggerTasks()
                         self.stopJitterTimer()
                         self.keepAlive.stop()
@@ -855,25 +884,36 @@ public final class RelocViewModel: ObservableObject {
             },
             onAuthenticated: { [weak self] in
                 Task { @MainActor in
-                    self?.handleSessionAuthenticated()
+                    guard let self, self.session?.id == sessionID else { return }
+                    self.handleSessionAuthenticated()
                 }
             },
             onLocationRequested: { [weak self] in
                 Task { @MainActor in
-                    self?.handleLocationSubscribed()
+                    guard let self, self.session?.id == sessionID else { return }
+                    self.handleLocationSubscribed()
                 }
             },
             onLocationStopped: { [weak self] in
                 Task { @MainActor in
-                    self?.handleLocationStoppedBySystem()
+                    guard let self, self.session?.id == sessionID else { return }
+                    self.handleLocationStoppedBySystem()
                 }
             },
             onSubscriptionRestarted: { [weak self] in
                 Task { @MainActor in
-                    self?.keepAlive.refreshAfterLocationToggle()
+                    guard let self, self.session?.id == sessionID else { return }
+                    self.keepAlive.refreshAfterLocationToggle()
+                }
+            },
+            onDiscoveredPort: { [weak self] port in
+                Task { @MainActor in
+                    guard let self, self.session?.id == sessionID else { return }
+                    self.discoveredDevicePort = port
                 }
             }
         )
+        newSession.setFallbackRealLocation(lastKnownRealLocation)
         self.session = newSession
         newSession.start(
             configuration: config,
@@ -887,8 +927,12 @@ public final class RelocViewModel: ObservableObject {
     public func stopAndRestore() {
         cancelTriggerTasks()
         stopJitterTimer()
-        session?.stop()
+        let activeSession = session
+        session = nil
+        activeSession?.stop()
         keepAlive.stop()
+        snapshot.isRunning = false
+        snapshot.activeSentences = []
         isAccessoryLocationConfirmed = false
         needsLocationServiceRefresh = false
         injectionPhase = .idle
@@ -928,7 +972,7 @@ public final class RelocViewModel: ObservableObject {
 
             // Actively request fresh internal GNSS/Wi-Fi/Cell fix so `locationd` flushes the cached accessory fix.
             self.coreLocation.requestAndStart()
-            self.coreLocation.pulseForAccessoryLock()
+            self.coreLocation.pulseForAccessoryLock(requestSingleFix: true)
             self.events.append(ProtocolEvent(
                 name: "real_location_recovery_started",
                 detail: "{\"event\":\"real_location_recovery_started\"}"
@@ -936,7 +980,7 @@ public final class RelocViewModel: ObservableObject {
 
             try? await Task.sleep(nanoseconds: 3_500_000_000)
             guard !Task.isCancelled, self.isRestoringRealLocation, !self.snapshot.isRunning else { return }
-            self.coreLocation.pulseForAccessoryLock()
+            self.coreLocation.pulseForAccessoryLock(requestSingleFix: true)
 
             try? await Task.sleep(nanoseconds: 3_500_000_000)
             guard !Task.isCancelled, self.isRestoringRealLocation, !self.snapshot.isRunning else { return }
@@ -994,7 +1038,7 @@ public final class RelocViewModel: ObservableObject {
                 subtitle: "已重新打开定位服务，请稍候 1–2 秒"
             )
             coreLocation.requestAndStart()
-            coreLocation.pulseForAccessoryLock()
+            coreLocation.pulseForAccessoryLock(requestSingleFix: true)
         }
     }
 
@@ -1065,7 +1109,10 @@ public final class RelocViewModel: ObservableObject {
         coreLocation.requestAndStart()
         updateInjectionPhase()
 
-        // If `locationd` doesn't dispatch 0xFFFA within 1.5s, pulse CoreLocation automatically up to 3 times.
+        // Escalating wake-up strategy if `locationd` doesn't dispatch 0xFFFA promptly:
+        // 1–2: non-destructive accuracy-tier nudge (avoids dropping active consumers to 0)
+        // 3: hard CoreLocation pulse
+        // 4: one automatic iAP2 link reconnect to clear stale `iap2d` state, then surface 1-tap refresh.
         subscriptionPulseTask?.cancel()
         subscriptionPulseTask = Task { @MainActor [weak self] in
             for attempt in 1...3 {
@@ -1075,10 +1122,30 @@ public final class RelocViewModel: ObservableObject {
                 if !self.snapshot.activeSentences.isEmpty { return }
                 self.events.append(ProtocolEvent(
                     name: "auto_subscription_pulse",
-                    detail: "{\"event\":\"auto_subscription_pulse\",\"attempt\":\(attempt)}"
+                    detail: "{\"event\":\"auto_subscription_pulse\",\"attempt\":\(attempt),\"mode\":\"\(attempt < 3 ? "nudge" : "pulse")\"}"
                 ))
-                self.keepAlive.pulseLocationSubscription()
-                self.coreLocation.pulseForAccessoryLock()
+                if attempt < 3 {
+                    self.keepAlive.nudgeLocationSubscription()
+                    self.coreLocation.nudgeForAccessoryLock()
+                } else {
+                    self.keepAlive.pulseLocationSubscription()
+                    self.coreLocation.pulseForAccessoryLock()
+                }
+            }
+
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled, let self, self.snapshot.isRunning else { return }
+            if !self.snapshot.activeSentences.isEmpty { return }
+
+            if !self.didAutoReconnectForSubscription {
+                self.didAutoReconnectForSubscription = true
+                self.events.append(ProtocolEvent(
+                    name: "auto_subscription_reconnect",
+                    detail: "{\"event\":\"auto_subscription_reconnect\"}"
+                ))
+                self.session?.requestLinkReconnect(reason: "waiting_subscription_timeout")
+            } else {
+                self.needsLocationServiceRefresh = true
             }
         }
     }
@@ -1132,19 +1199,34 @@ public final class RelocViewModel: ObservableObject {
     private func scheduleLockWatchdog() {
         lockWatchdogTask?.cancel()
         lockWatchdogTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 4_500_000_000)
+            // Stage 1 (2.0s): zero-click Kalman reset + 5Hz burst + non-destructive CoreLocation nudge.
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
             guard !Task.isCancelled, let self, self.snapshot.isRunning else { return }
             if !self.isAccessoryLocationConfirmed {
-                // Silent automatic nudge before asking user to touch anything.
                 self.events.append(ProtocolEvent(
                     name: "auto_lock_nudge",
                     detail: "{\"event\":\"auto_lock_nudge\"}"
                 ))
-                self.session?.triggerFastBurst(seconds: 10.0)
-                self.keepAlive.pulseLocationSubscription()
-                self.coreLocation.pulseForAccessoryLock()
+                self.session?.notifyLocationUpdated(resetKalman: true, burstSeconds: 10.0)
+                self.keepAlive.nudgeLocationSubscription()
+                self.coreLocation.nudgeForAccessoryLock()
             }
-            try? await Task.sleep(nanoseconds: 3_500_000_000)
+
+            // Stage 2 (4.5s): automatic zero-click iAP2 RST soft-reconnect to force `locationd` re-acquisition.
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled, self.snapshot.isRunning else { return }
+            if !self.isAccessoryLocationConfirmed {
+                self.events.append(ProtocolEvent(
+                    name: "auto_soft_reconnect",
+                    detail: "{\"event\":\"auto_soft_reconnect\"}"
+                ))
+                self.session?.requestLinkReconnect(reason: "auto_soft_reconnect")
+                self.keepAlive.nudgeLocationSubscription()
+                self.coreLocation.nudgeForAccessoryLock()
+            }
+
+            // Stage 3 (8.5s): surface manual 1-tap refresh banner only if zero-click recovery still hasn't locked.
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
             guard !Task.isCancelled, self.snapshot.isRunning else { return }
             if !self.isAccessoryLocationConfirmed {
                 self.needsLocationServiceRefresh = true
@@ -1153,6 +1235,11 @@ public final class RelocViewModel: ObservableObject {
     }
 
     private func evaluateCoreLocationConfirmation(_ telemetry: LiveLocationTelemetry?) {
+        if let telemetry, telemetry.isProducedByAccessory == false {
+            let real = TargetLocation(latitude: telemetry.latitude, longitude: telemetry.longitude, altitude: telemetry.altitude)
+            lastKnownRealLocation = real
+            session?.setFallbackRealLocation(real)
+        }
         // Post-stop recovery check: wait until `locationd` delivers a fresh internal (non-accessory) fix.
         if isRestoringRealLocation && !snapshot.isRunning {
             guard let telemetry else { return }
@@ -1193,6 +1280,14 @@ public final class RelocViewModel: ObservableObject {
             }
             return
         }
+        if coreLocation.isReducedAccuracy && !loggedReducedAccuracyForSession {
+            loggedReducedAccuracyForSession = true
+            events.append(ProtocolEvent(
+                name: "reduced_accuracy_detected",
+                detail: "{\"event\":\"reduced_accuracy_detected\"}",
+                isError: true
+            ))
+        }
         let targetCL = CLLocation(latitude: targetLocation.latitude, longitude: targetLocation.longitude)
         let reportedCL = CLLocation(latitude: telemetry.latitude, longitude: telemetry.longitude)
         let distance = targetCL.distance(from: reportedCL)
@@ -1214,6 +1309,7 @@ public final class RelocViewModel: ObservableObject {
                     isLocationRefreshGuideActive = false
                     refreshCountdownTask?.cancel()
                     refreshCountdownTask = nil
+                    keepAlive.restoreAudioPreferenceAfterSettingsToggle()
                     PairingPiPPresenter.shared.finishLocationRefresh(
                         succeeded: true,
                         message: "已锁定「\(selectedPlaceName)」，可返回任意 App 使用"
@@ -1247,6 +1343,9 @@ public final class RelocViewModel: ObservableObject {
         // Cancel background pulse/watchdog tasks immediately so they never stop CLLocationManager
         // and falsely trigger a 0xFFFC "5 秒" flash before the user touches Location Services.
         cancelTriggerTasks()
+        // Guarantee silent audio keep-alive is active before toggling Location Services OFF in Settings,
+        // otherwise iOS may suspend Reloc mid-countdown and drop the iAP2 tunnel.
+        keepAlive.ensureAudioKeepAliveForSettingsToggle()
         isLocationRefreshGuideActive = true
         locationRefreshSawDisabled = false
         lastRestoreAuthStatus = coreLocation.authorizationStatus
@@ -1259,14 +1358,21 @@ public final class RelocViewModel: ObservableObject {
         }
     }
 
-    /// Manually pulses CoreLocation and triggers a fast NMEA burst without leaving Reloc.
+    /// Manually triggers a zero-click iAP2 soft-reconnect + fast NMEA burst without leaving Reloc.
     public func retryAutoLock() {
         guard snapshot.isRunning else { return }
         needsLocationServiceRefresh = false
         session?.triggerFastBurst(seconds: 15.0)
-        keepAlive.pulseLocationSubscription()
-        coreLocation.pulseForAccessoryLock()
-        scheduleLockWatchdog()
+        if snapshot.activeSentences.isEmpty {
+            keepAlive.pulseLocationSubscription()
+            coreLocation.pulseForAccessoryLock()
+            handleSessionAuthenticated()
+        } else {
+            session?.requestLinkReconnect(reason: "manual_retry_soft_reconnect")
+            keepAlive.nudgeLocationSubscription()
+            coreLocation.nudgeForAccessoryLock()
+            scheduleLockWatchdog()
+        }
     }
 
     private func startLocationRefreshCountdown() {
@@ -1295,7 +1401,7 @@ public final class RelocViewModel: ObservableObject {
 
     public func openLocationServicesSettings() {
         let candidates = [
-            "App-Prefs:Privacy&path=LOCATION",
+            "App-Prefs:root=Privacy&path=LOCATION",
             "prefs:root=Privacy&path=LOCATION",
             UIApplication.openSettingsURLString,
         ]

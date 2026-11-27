@@ -96,9 +96,18 @@ static NSError *RLLockdownErr(RLErrorCode code, NSString *message) {
 
     [self emit:@"lockdown_session_started" details:@{@"ssl": @(enableSSL)}];
 
-    // 3. Upgrade lockdownd control socket to TLS (STARTTLS)
+    // 3. Upgrade lockdownd control socket to TLS (STARTTLS) with peer certificate pinning
     if (enableSSL) {
-        if (![_socket upgradeToTLSWithCertificates:_sslCertificates timeout:timeout error:error]) {
+        SecCertificateRef rootCert = [pairingRecord copyRootCertificate];
+        SecCertificateRef deviceCert = [pairingRecord copyDeviceCertificate];
+        BOOL upgraded = [_socket upgradeToTLSWithCertificates:_sslCertificates
+                                              rootCertificate:rootCert
+                                            deviceCertificate:deviceCert
+                                                      timeout:timeout
+                                                        error:error];
+        if (rootCert) CFRelease(rootCert);
+        if (deviceCert) CFRelease(deviceCert);
+        if (!upgraded) {
             [_socket close];
             return nil;
         }
@@ -158,7 +167,16 @@ static NSError *RLLockdownErr(RLErrorCode code, NSString *message) {
     }
 
     if (enableServiceSSL) {
-        if (![serviceSocket upgradeToTLSWithCertificates:_sslCertificates timeout:timeout error:error]) {
+        SecCertificateRef rootCert = [_pairingRecord copyRootCertificate];
+        SecCertificateRef deviceCert = [_pairingRecord copyDeviceCertificate];
+        BOOL upgraded = [serviceSocket upgradeToTLSWithCertificates:_sslCertificates
+                                                    rootCertificate:rootCert
+                                                  deviceCertificate:deviceCert
+                                                            timeout:timeout
+                                                              error:error];
+        if (rootCert) CFRelease(rootCert);
+        if (deviceCert) CFRelease(deviceCert);
+        if (!upgraded) {
             [serviceSocket close];
             return nil;
         }
@@ -229,6 +247,10 @@ static NSError *RLLockdownErr(RLErrorCode code, NSString *message) {
         return nil;
     }
     return (NSDictionary *)parsed;
+}
+
+- (void)cancel {
+    [_socket close];
 }
 
 - (void)close {

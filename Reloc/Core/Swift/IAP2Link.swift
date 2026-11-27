@@ -103,8 +103,12 @@ public final class IAP2Link {
         return try RLIAP2Packet.decode(from: full)
     }
 
-    private func writePacket(_ packet: RLIAP2Packet) throws {
-        try socket.write(packet.encode(), timeout: max(retransmitSeconds, 2.0))
+    private func writePacket(_ packet: RLIAP2Packet, timeout: TimeInterval? = nil) throws {
+        let encoded = packet.encode()
+        guard encoded.count >= 9 else {
+            throw IAP2LinkError.protocolError("iAP2 packet exceeds maximum frame length")
+        }
+        try socket.write(encoded, timeout: timeout ?? max(retransmitSeconds, 2.0))
     }
 
     public func handshake() throws {
@@ -218,6 +222,9 @@ public final class IAP2Link {
 
     public func send(_ message: RLIAP2Message) throws {
         let raw = message.encode()
+        guard raw.count >= 6 else {
+            throw IAP2LinkError.protocolError("iAP2 message exceeds maximum length")
+        }
         let chunkLimit = max(1, maximumPacket - 10)
 
         var offset = 0
@@ -259,6 +266,44 @@ public final class IAP2Link {
 
             if !acknowledged {
                 throw IAP2LinkError.timeout("Peer did not acknowledge iAP2 data packet")
+            }
+        }
+    }
+
+    /// Sends a short control/location message once with a bounded wait so teardown/reset flushes never stall.
+    public func sendBestEffort(_ message: RLIAP2Message, timeout: TimeInterval = 0.25) {
+        let raw = message.encode()
+        guard raw.count >= 6 else { return }
+        let chunkLimit = max(1, maximumPacket - 10)
+        var offset = 0
+        while offset < raw.count {
+            let end = min(offset + chunkLimit, raw.count)
+            let chunk = raw.subdata(in: offset..<end)
+            offset = end
+
+            sequence = sequence &+ 1
+            let pkt = RLIAP2Packet(
+                flags: RLIAP2LinkFlags.ACK.rawValue,
+                sequence: sequence,
+                acknowledgement: peerSequence,
+                session: controlSession,
+                payload: chunk
+            )
+            do {
+                try writePacket(pkt, timeout: timeout)
+                let deadline = CFAbsoluteTimeGetCurrent() + min(0.2, timeout)
+                while true {
+                    let remaining = deadline - CFAbsoluteTimeGetCurrent()
+                    if remaining <= 0 { break }
+                    guard let incoming = try readPacket(timeout: remaining) else { break }
+                    try accept(incoming)
+                    if (incoming.flags & RLIAP2LinkFlags.ACK.rawValue) != 0 &&
+                        incoming.acknowledgement == sequence {
+                        break
+                    }
+                }
+            } catch {
+                return
             }
         }
     }

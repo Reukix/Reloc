@@ -46,7 +46,7 @@ final class DevicePairingCoordinator: NSObject, ObservableObject, NetServiceDele
     private let pip = PairingPiPPresenter.shared
     private let keepAlive = BackgroundKeepAlive()
 
-    func start(onSaveRecord: @escaping (Data, Data, String) throws -> Void) {
+    func start(existingRequest: [String: String] = [:], onSaveRecord: @escaping (Data, Data, String) throws -> Void) {
         guard !isRunning else { return }
         #if targetEnvironment(simulator)
         error = "设备端配对需要 iOS 27 或更新版本的真实 iPhone。"
@@ -74,8 +74,7 @@ final class DevicePairingCoordinator: NSObject, ObservableObject, NetServiceDele
         pip.startSession(deadline: deadline)
 
         do {
-            let request: [String: Any] = [:]
-            let json = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
+            let json = String(decoding: try JSONSerialization.data(withJSONObject: existingRequest), as: UTF8.self)
             background = UIApplication.shared.beginBackgroundTask(withName: "Reloc Device Pairing") { [weak self] in
                 Task { @MainActor in
                     self?.cancel(reason: "系统结束了后台配对时间，请返回 Reloc 重试。")
@@ -206,7 +205,7 @@ final class DevicePairingCoordinator: NSObject, ObservableObject, NetServiceDele
             UIApplication.shared.endBackgroundTask(background)
             background = .invalid
         }
-        keepAlive.stop()
+        keepAlive.stop(deactivateAudioSession: false)
         let finalMessage = error ?? (succeeded ? "配对完成，可返回 Reloc 开始定位" : "配对已结束")
         pip.finish(succeeded: succeeded, message: finalMessage)
     }

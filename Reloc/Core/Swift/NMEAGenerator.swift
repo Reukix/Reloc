@@ -66,33 +66,43 @@ public enum NMEAGenerator {
         return String(format: "$%@*%02X\r\n", body, checksum)
     }
 
-    /// Generates NMEA sentences keyed by iAP2 location sentence ID: 1 = GPGGA, 2 = GPRMC.
-    public static func locationSentences(
-        for location: TargetLocation,
-        at date: Date = Date()
-    ) throws -> [UInt16: String] {
-        let (lat, north) = try formatCoordinate(location.latitude, isLatitude: true)
-        let (lon, east) = try formatCoordinate(location.longitude, isLatitude: false)
-
-        var utcCal = Calendar(identifier: .gregorian)
-        utcCal.timeZone = TimeZone(secondsFromGMT: 0)!
-        let comps = utcCal.dateComponents([.hour, .minute, .second, .nanosecond, .day, .month, .year], from: date)
-
-        let centiseconds = min(99, max(0, (comps.nanosecond ?? 0) / 10_000_000))
+    private static func utcTimestampStrings(for date: Date) -> (clock: String, ddmmyy: String) {
+        let interval = date.timeIntervalSince1970
+        let wholeSeconds = floor(interval)
+        var rawTime = time_t(wholeSeconds)
+        var utcTime = tm()
+        gmtime_r(&rawTime, &utcTime)
+        let centiseconds = min(99, max(0, Int(((interval - wholeSeconds) * 100.0).rounded(.down))))
         let clock = String(
             format: "%02d%02d%02d.%02d",
-            comps.hour ?? 0,
-            comps.minute ?? 0,
-            comps.second ?? 0,
+            utcTime.tm_hour,
+            utcTime.tm_min,
+            utcTime.tm_sec,
             centiseconds
         )
         let ddmmyy = String(
             format: "%02d%02d%02d",
-            comps.day ?? 1,
-            comps.month ?? 1,
-            (comps.year ?? 2026) % 100
+            utcTime.tm_mday,
+            utcTime.tm_mon + 1,
+            (Int(utcTime.tm_year) + 1900) % 100
         )
+        return (clock, ddmmyy)
+    }
 
+    /// Generates NMEA sentences keyed by iAP2 location sentence ID: 1 = GPGGA, 2 = GPRMC.
+    public static func locationSentences(
+        for location: TargetLocation,
+        at date: Date = Date(),
+        hdop: Double = 0.5,
+        fixQuality: Int = 2
+    ) throws -> [UInt16: String] {
+        let (lat, north) = try formatCoordinate(location.latitude, isLatitude: true)
+        let (lon, east) = try formatCoordinate(location.longitude, isLatitude: false)
+        let (clock, ddmmyy) = utcTimestampStrings(for: date)
+
+        let safeQuality = max(0, min(8, fixQuality))
+        let safeHDOP = hdop.isFinite ? max(0.1, hdop) : 0.5
+        let hdopStr = String(format: "%.1f", safeHDOP)
         let altitudeStr = String(format: "%.1f", location.altitude.isFinite ? location.altitude : 10.0)
         let speedStr = String(format: "%.1f", max(0.0, location.speedKnots.isFinite ? location.speedKnots : 0.0))
         let courseNorm = location.courseDegrees.isFinite
@@ -100,12 +110,13 @@ public enum NMEAGenerator {
                 .truncatingRemainder(dividingBy: 360.0)
             : 0.0
         let courseStr = String(format: "%.1f", courseNorm)
+        let rmcMode = safeQuality == 2 ? "D" : "A"
 
         let gga = sentence(
-            body: "GPGGA,\(clock),\(lat),\(north),\(lon),\(east),1,12,0.6,\(altitudeStr),M,0.0,M,,"
+            body: "GPGGA,\(clock),\(lat),\(north),\(lon),\(east),\(safeQuality),12,\(hdopStr),\(altitudeStr),M,0.0,M,,"
         )
         let rmc = sentence(
-            body: "GPRMC,\(clock),A,\(lat),\(north),\(lon),\(east),\(speedStr),\(courseStr),\(ddmmyy),,,A"
+            body: "GPRMC,\(clock),A,\(lat),\(north),\(lon),\(east),\(speedStr),\(courseStr),\(ddmmyy),,,\(rmcMode)"
         )
         return [1: gga, 2: rmc]
     }
@@ -114,25 +125,7 @@ public enum NMEAGenerator {
     /// sent right before tearing down the iAP2 link so `locationd` immediately drops the
     /// external accessory fix and falls back to internal GNSS/Wi-Fi/Cellular positioning.
     public static func voidLocationSentences(at date: Date = Date()) -> [UInt16: String] {
-        var utcCal = Calendar(identifier: .gregorian)
-        utcCal.timeZone = TimeZone(secondsFromGMT: 0)!
-        let comps = utcCal.dateComponents([.hour, .minute, .second, .nanosecond, .day, .month, .year], from: date)
-
-        let centiseconds = min(99, max(0, (comps.nanosecond ?? 0) / 10_000_000))
-        let clock = String(
-            format: "%02d%02d%02d.%02d",
-            comps.hour ?? 0,
-            comps.minute ?? 0,
-            comps.second ?? 0,
-            centiseconds
-        )
-        let ddmmyy = String(
-            format: "%02d%02d%02d",
-            comps.day ?? 1,
-            comps.month ?? 1,
-            (comps.year ?? 2026) % 100
-        )
-
+        let (clock, ddmmyy) = utcTimestampStrings(for: date)
         let gga = sentence(body: "GPGGA,\(clock),0000.0000,N,00000.0000,E,0,00,99.9,0.0,M,0.0,M,,")
         let rmc = sentence(body: "GPRMC,\(clock),V,,,,,0.0,0.0,\(ddmmyy),,,N")
         return [1: gga, 2: rmc]

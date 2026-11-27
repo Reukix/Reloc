@@ -1,5 +1,24 @@
 #import "RLPairingRecord.h"
 #import "RLASN1DER.h"
+#import <dlfcn.h>
+
+typedef SecIdentityRef (*RLSecIdentityCreateFn)(CFAllocatorRef, SecCertificateRef, SecKeyRef);
+
+static SecIdentityRef RLCreateTransientIdentity(SecCertificateRef cert,
+                                                SecKeyRef privKey) CF_RETURNS_RETAINED {
+    static RLSecIdentityCreateFn createFn = NULL;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        createFn = (RLSecIdentityCreateFn)dlsym(RTLD_DEFAULT, "SecIdentityCreate");
+        if (!createFn) {
+            void *secHandle = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY | RTLD_NOLOAD);
+            if (secHandle) {
+                createFn = (RLSecIdentityCreateFn)dlsym(secHandle, "SecIdentityCreate");
+            }
+        }
+    });
+    return createFn ? createFn(kCFAllocatorDefault, cert, privKey) : NULL;
+}
 
 static NSError *RLPairError(NSString *message) {
     return [NSError errorWithDomain:RLErrorDomain
@@ -141,7 +160,7 @@ static NSError *RLPairError(NSString *message) {
         return NULL;
     }
 
-    SecIdentityRef identity = SecIdentityCreate(kCFAllocatorDefault, cert, privKey);
+    SecIdentityRef identity = RLCreateTransientIdentity(cert, privKey);
     CFRelease(privKey);
     CFRelease(cert);
 
@@ -172,6 +191,25 @@ static NSError *RLPairError(NSString *message) {
     }
 
     return [result copy];
+}
+
+- (nullable SecCertificateRef)copyCertificateFromPEMData:(nullable NSData *)pemData CF_RETURNS_RETAINED {
+    if (pemData.length == 0) {
+        return NULL;
+    }
+    NSData *der = RLPEMDecodeBlock(pemData, NULL, NULL);
+    if (der.length == 0) {
+        return NULL;
+    }
+    return SecCertificateCreateWithData(kCFAllocatorDefault, (__bridge CFDataRef)der);
+}
+
+- (nullable SecCertificateRef)copyRootCertificate {
+    return [self copyCertificateFromPEMData:self.rootCertificatePEM];
+}
+
+- (nullable SecCertificateRef)copyDeviceCertificate {
+    return [self copyCertificateFromPEMData:self.deviceCertificatePEM];
 }
 
 @end

@@ -29,6 +29,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// Returns an array suitable for SSLSetCertificate: @[SecIdentityRef, optional RootCertificate].
 - (nullable NSArray *)copySSLCertificateArrayWithError:(NSError * _Nullable * _Nullable)error;
 
+/// Returns the parsed RootCertificate from the pairing record, if present. Caller owns CFRelease().
+- (nullable SecCertificateRef)copyRootCertificate CF_RETURNS_RETAINED;
+
+/// Returns the parsed DeviceCertificate from the pairing record, if present. Caller owns CFRelease().
+- (nullable SecCertificateRef)copyDeviceCertificate CF_RETURNS_RETAINED;
+
 @end
 
 NS_ASSUME_NONNULL_END

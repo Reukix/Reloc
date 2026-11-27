@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Security
 import SwiftUI
 
 public enum AppAppearanceMode: String, CaseIterable, Codable, Identifiable, Sendable {
@@ -217,10 +218,19 @@ public final class CredentialStore {
         static let lastAltitude = "reloc.lastAlt"
     }
 
+    private enum Keychain {
+        static let service = "dev.reloc.ios.pairing"
+        static let account = "active_device_pairing"
+    }
+
     private var appSupportDir: URL {
         let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = base.appendingPathComponent("Reloc", isDirectory: true)
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var mutableDir = dir
+        try? mutableDir.setResourceValues(values)
         return dir
     }
 
@@ -466,9 +476,63 @@ public final class CredentialStore {
     @discardableResult
     public func importPairingData(_ raw: Data) throws -> SavedPairing {
         let (xml, pairing) = try Self.validatePairingData(raw)
-        try xml.write(to: pairingURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        try savePairingBytes(xml)
         try? fileManager.removeItem(at: legacyPairingURL)
         return pairing
+    }
+
+    private func savePairingBytes(_ xml: Data) throws {
+        let status = writePairingToKeychain(xml)
+        if status == errSecSuccess {
+            try? fileManager.removeItem(at: pairingURL)
+            return
+        }
+        if status == errSecMissingEntitlement {
+            // Unsigned simulator / test-host fallback with backup exclusion.
+            var target = pairingURL
+            try xml.write(to: target, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try? target.setResourceValues(values)
+            return
+        }
+        throw PairingImportError.invalidFormat("无法写入系统钥匙串（OSStatus \(status)）。")
+    }
+
+    private func writePairingToKeychain(_ data: Data) -> OSStatus {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Keychain.service,
+            kSecAttrAccount: Keychain.account,
+        ]
+        SecItemDelete(query as CFDictionary)
+        var attrs = query
+        attrs[kSecValueData] = data
+        attrs[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        return SecItemAdd(attrs as CFDictionary, nil)
+    }
+
+    private func readPairingFromKeychain() -> Data? {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Keychain.service,
+            kSecAttrAccount: Keychain.account,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne,
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess else { return nil }
+        return result as? Data
+    }
+
+    private func deletePairingFromKeychain() {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: Keychain.service,
+            kSecAttrAccount: Keychain.account,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 
     @discardableResult
@@ -486,6 +550,19 @@ public final class CredentialStore {
         return pairing
     }
 
+    /// Builds the optional `record` + `host_irk` request payload so re-pairing reuses the existing host identity.
+    public func loadOnDeviceRepairingRequest() -> [String: String] {
+        guard case .remotePairing(let xmlData, _) = loadPairing().0,
+              let dict = try? PropertyListSerialization.propertyList(from: xmlData, format: nil) as? [String: Any] else {
+            return [:]
+        }
+        var req: [String: String] = ["record": xmlData.base64EncodedString()]
+        if let irk = dict["reloc_host_irk"] as? Data, irk.count == 16 {
+            req["host_irk"] = irk.base64EncodedString()
+        }
+        return req
+    }
+
     public func importDiscoveredPairingInDocuments() -> SavedPairing? {
         if loadPairing().0 != nil { return nil }
         guard let files = try? fileManager.contentsOfDirectory(
@@ -494,7 +571,7 @@ public final class CredentialStore {
         ) else { return nil }
 
         let validExts: Set<String> = ["mobiledevicepairing", "mobilepair", "rppairing", "plist"]
-        let candidates: [(date: Date, data: Data)] = files.prefix(100).compactMap { url in
+        let candidates: [(url: URL, date: Date, data: Data)] = files.prefix(100).compactMap { url in
             guard validExts.contains(url.pathExtension.lowercased()),
                   let vals = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]),
                   vals.isRegularFile == true,
@@ -504,21 +581,44 @@ public final class CredentialStore {
                   (try? Self.validatePairingData(data)) != nil else {
                 return nil
             }
-            return (vals.contentModificationDate ?? .distantPast, data)
+            return (url, vals.contentModificationDate ?? .distantPast, data)
         }
 
-        guard let newest = candidates.max(by: { $0.date < $1.date }) else { return nil }
-        return try? importPairingData(newest.data)
+        guard let newest = candidates.max(by: { $0.date < $1.date }),
+              let imported = try? importPairingData(newest.data) else {
+            return nil
+        }
+        // Remove plaintext pairing file from shared Documents once safely imported.
+        try? fileManager.removeItem(at: newest.url)
+        return imported
     }
 
     public func loadPairing() -> (SavedPairing?, PairingStatus) {
-        let targetURL = fileManager.fileExists(atPath: pairingURL.path) ? pairingURL : legacyPairingURL
-        guard fileManager.fileExists(atPath: targetURL.path) else {
+        let keychainData = readPairingFromKeychain()
+        let diskURL = fileManager.fileExists(atPath: pairingURL.path) ? pairingURL : legacyPairingURL
+        let rawData: Data
+        let loadedFromDisk: Bool
+
+        if let keychainData {
+            rawData = keychainData
+            loadedFromDisk = false
+        } else if fileManager.fileExists(atPath: diskURL.path) {
+            do {
+                rawData = try Data(contentsOf: diskURL)
+                loadedFromDisk = true
+            } catch {
+                return (nil, PairingStatus(isLoaded: false, kind: nil, summaryID: nil, errorMessage: error.localizedDescription))
+            }
+        } else {
             return (nil, PairingStatus(isLoaded: false, kind: nil, summaryID: nil, errorMessage: nil))
         }
+
         do {
-            let data = try Data(contentsOf: targetURL)
-            let (_, pairing) = try Self.validatePairingData(data)
+            let (xml, pairing) = try Self.validatePairingData(rawData)
+            if loadedFromDisk && writePairingToKeychain(xml) == errSecSuccess {
+                try? fileManager.removeItem(at: pairingURL)
+                try? fileManager.removeItem(at: legacyPairingURL)
+            }
             let summary: String
             switch pairing {
             case .remotePairing(_, let identifier):
@@ -533,6 +633,7 @@ public final class CredentialStore {
     }
 
     public func removePairingFile() {
+        deletePairingFromKeychain()
         try? fileManager.removeItem(at: pairingURL)
         try? fileManager.removeItem(at: legacyPairingURL)
         deviceUDID = ""
