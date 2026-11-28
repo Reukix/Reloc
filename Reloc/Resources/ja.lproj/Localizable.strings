@@ -1,0 +1,429 @@
+/* Tabs & Common */
+"tab.location" = "位置情報";
+"tab.settings" = "設定";
+"tab.logs" = "診断";
+"common.alert.title" = "お知らせ";
+"common.ok" = "OK";
+"common.cancel" = "キャンセル";
+"common.close" = "閉じる";
+"common.save" = "保存";
+"common.apply" = "適用";
+"common.delete" = "削除";
+"common.rename" = "名称変更";
+"common.clear" = "消去";
+"common.retry" = "再試行";
+"common.stop" = "停止";
+"common.restore" = "再開";
+"common.enable" = "設定を開く";
+
+/* Appearance, Map Sources & Styles */
+"appearance.system" = "システムに合わせる";
+"appearance.light" = "ライト";
+"appearance.dark" = "ダーク";
+
+"map.source.apple" = "Appleマップ（システム標準）";
+"map.source.esri_street" = "世界市街図（Esri · WGS-84）";
+"map.source.osm" = "OpenStreetMap（オープン · WGS-84）";
+"map.source.esri_satellite" = "世界衛星写真（Esri · WGS-84）";
+
+"map.source.apple.short" = "Appleマップ";
+"map.source.esri_street.short" = "世界市街図";
+"map.source.osm.short" = "OSM";
+"map.source.esri_satellite.short" = "衛星写真";
+
+"map.style.standard" = "標準";
+"map.style.satellite" = "航空写真";
+"map.style.hybrid" = "ハイブリッド";
+
+/* Settings */
+"settings.title" = "設定";
+"settings.section.location" = "位置情報オプション";
+"settings.nmea_interval" = "NMEA送信間隔 · %.1f秒";
+"settings.duration" = "セッション時間";
+"settings.duration.continuous" = "連続実行";
+"settings.duration.seconds" = "%d秒";
+"settings.duration.hours" = "%d時間";
+"settings.gcj02" = "中国本土 GCJ-02 座標補正";
+"settings.micro_jitter" = "微小ゆらぎ（±0.6m GPSドリフト）";
+"settings.dynamic_island.title" = "Dynamic Island 位置表示";
+"settings.dynamic_island.on_hint" = "バックグラウンド時にDynamic Island／ステータスバーへ表示";
+"settings.dynamic_island.off_ready" = "非表示（サイレントバックグラウンド位置情報で動作）";
+"settings.dynamic_island.off_need_always" = "完全に非表示にするには位置情報権限を「常に」にしてください";
+"settings.background_mode.title" = "バックグラウンド動作";
+"settings.background_mode.always" = "ネイティブ位置情報キープアライブ（音声なし）";
+"settings.background_mode.upgrade_hint" = "長時間安定動作のため、位置情報権限を「常に」に設定してください";
+"settings.background_mode.action" = "設定";
+"settings.background_mode.footer" = "無音再生やオーディオセッションの競合を一切発生させず、iOS標準のバックグラウンド位置情報モードのみで動作します。画面ロック状態で数時間以上継続する場合は、iOSの「設定」でRelocの位置情報権限を「常に」にしてください。";
+"settings.section.appearance" = "マップと外観";
+"settings.appearance" = "外観";
+"settings.language" = "言語";
+"settings.language.system" = "システムに合わせる";
+"settings.map_source" = "地図ソース";
+"settings.apple_map_style" = "Appleマップのスタイル";
+"settings.appearance.footer" = "標準ではAppleマップ（MapKit）を使用します。純粋な国際WGS-84タイルを使用する場合は、世界市街図、OpenStreetMap、または世界衛星写真に切り替えてください。";
+"settings.section.shortcuts" = "ショートカット";
+"settings.shortcuts.start_summary" = "お気に入りを選択 → GPS開始 → 位置情報サービスを開いてキャッシュ消去";
+"settings.shortcuts.stop_summary" = "GPS停止 → 7秒PiPタイマー表示＆位置情報サービスを開いて本来のGPSへ復帰";
+"settings.shortcuts.open_app" = "Apple「ショートカット」を開く";
+"settings.shortcuts.copy_prefs_title" = "位置情報サービスのリンクをコピー";
+"settings.shortcuts.copied" = "コピー済み";
+"settings.shortcuts.footer" = "「ショートカット」アプリでRelocを検索すると、これら2つのアクションを追加できます。「ショートカット」標準の「URLを開く」アクションを続けて使う場合は、「仮想位置情報を開始」の後に prefs:root=Privacy&path=LOCATION を渡してください。";
+
+/* Map Picker */
+"map.search.placeholder" = "場所を検索 または 緯度, 経度";
+"map.search.clear" = "検索を消去";
+"map.search.manual" = "座標を手動入力";
+"map.menu.source" = "地図ソース";
+"map.menu.style" = "Appleマップのスタイル";
+"map.menu.coordinates" = "座標";
+"map.menu.manual_input" = "座標を入力";
+"map.pin.active" = "適用中の位置";
+"map.pin.pending" = "更新予定の位置";
+"map.unknown_place" = "名称不明の場所";
+"map.selected_place" = "選択中の場所";
+"map.geocoding" = "住所を取得中…";
+"map.wgs84_coord" = "WGS-84座標";
+
+"map.status.confirmed" = "アクセサリGPS有効 ✓";
+"map.status.pending_refresh" = "更新が必要 · ACK %d";
+"map.status.switching" = "GPSロック中 · ACK %d";
+"map.status.auth_refresh" = "認証済み · 更新が必要";
+"map.status.auth_waking" = "認証済み · 購読中…";
+"map.status.connecting" = "位置情報を開始中…";
+"map.status.idle" = "待機中 · 地点を選択";
+
+"map.altitude.resolving" = "標高取得中…";
+"map.altitude.value" = "標高 %.1fm";
+
+"map.interrupted.title" = "前回のセッションが中断されました";
+"map.interrupted.subtitle" = "前回の位置を再開：%@";
+
+"map.stop_confirm.title" = "シミュレーションを停止して本来の位置に戻しますか？";
+"map.stop_confirm.button" = "停止して復元";
+"map.stop_confirm.message" = "停止すると、iOSは端末の本来のGPS位置情報に切り替わります。";
+
+"map.permission.denied" = "位置情報の権限がオフのため、アクセサリ購読を開始できません。";
+"map.permission.reduced" = "「正確な位置情報」がオフのため、アクセサリGPSがロックできない、またはずれる場合があります。";
+"map.restored.notice" = "端末の本来のGPS位置情報に戻りました";
+"map.last_error" = "直前のエラー：%@";
+
+"map.button.update_location" = "この位置に更新";
+"map.button.stop_restore" = "停止して復元";
+"map.button.start" = "位置情報を開始";
+
+"map.restore.banner.stale" = "アクセサリ接続は終了しましたが、iOSに直前の位置キャッシュが残っています（屋内ではよくある現象です）。下のワンタップ更新で本来のGPSに戻せます。";
+"map.restore.banner.button" = "位置情報サービスをワンタップ更新（復元）";
+"map.restore.banner.working" = "切断および無効NMEAを送信しました。内蔵GPSを起動中…";
+"map.restore.banner.refresh_now" = "今すぐ更新";
+
+"map.live.confirmed.title" = "アクセサリGPSが有効です";
+"map.live.confirmed.subtitle" = "外部ソース確認済み（isProducedByAccessory = true）。他のアプリに切り替えて問題ありません。";
+"map.live.waiting_sub.detail" = "MFi認証は完了しましたが、iOSがまだアクセサリGPSを購読していません。下からワンタップ更新（7秒PiPタイマー付き）を実行してください。";
+"map.live.pending_lock.detail" = "NMEAは接続済みですが、iOSがキャッシュ済みの位置情報を保持しています。下からワンタップ更新（7秒PiPタイマー付き）を実行してください。";
+"map.live.pending_lock.distant_detail" = "指定地点が現在地から15km以上離れており、iOSのWi-Fi／基地局検証（CLNmeaScreener）によりブロックされています。下から更新してください。機内モード使用時は「設定 → Wi-Fi」でWi-Fiを完全にオフ（コントロールセンターではスキャン継続）にするか、防回弾ルールを併用してください。";
+"map.live.refresh_button" = "位置情報サービスをワンタップ更新（PiPガイド）";
+"map.live.connecting" = "ローカルアクセサリ通信路の作成とMFi認証を実行中…";
+"map.live.waking_sub" = "認証完了。システムのアクセサリGPS購読を起動中…";
+"map.live.injecting" = "高速NMEAストリームを送信中、システムロックを待機しています…";
+"map.live.force_refresh" = "更新";
+
+"map.search.error.not_found" = "一致する場所が見つかりません。別のキーワードでお試しください。";
+"map.search.error.throttled" = "検索回数が多すぎます。しばらくしてからもう一度お試しください。";
+"map.search.error.network" = "検索に失敗しました。ネットワーク接続を確認してください。";
+
+/* Places Sheet */
+"places.title" = "保存済み・ルート";
+"places.picker" = "カテゴリ";
+"places.tab.favorites" = "場所 (%d)";
+"places.tab.routes" = "ルート (%d)";
+"places.tab.recents" = "履歴 (%d)";
+"places.save_current.header" = "選択中の場所を保存";
+"places.name.placeholder" = "名前を入力";
+"places.favorites.header" = "保存済みの場所";
+"places.favorites.empty" = "保存済みの場所はありません";
+"places.routes.save_current" = "現在のルートを保存";
+"places.routes.header" = "保存済みのルート";
+"places.routes.empty" = "保存済みのルートはありません。ルートを作成し、ブックマークアイコンをタップして保存できます。";
+"places.recents.header" = "最近の場所（最大30件）";
+"places.recents.empty" = "最近の履歴はありません";
+"places.rename.title" = "名称変更";
+"places.rename.placeholder" = "新しい名前";
+
+/* Mode & Trajectory Simulation */
+"mode.fixed" = "ピン";
+"mode.route" = "ルート";
+"route.creation.road" = "道路ルート";
+"route.creation.freehand" = "手描きルート";
+"route.freehand.banner" = "1本指で地図上に軌跡を描画（始点付近で離すと自動でループ化）";
+"route.freehand.start_draw" = "描画開始";
+"route.freehand.redraw" = "描き直す";
+"route.freehand.stop_draw" = "終了";
+"route.freehand.drawing_title" = "手描きルートを作成中…";
+"route.freehand.drawing_subtitle" = "1本指でコースを描画できます（2本指で拡大・縮小）";
+"route.freehand.empty_title" = "手描き自由ルート";
+"route.freehand.empty_subtitle" = "トラック周回ランや公園コースに最適・「描画開始」で描けます";
+"route.freehand.ready_title" = "手描きルート · %@";
+"route.freehand.ready_loop_title" = "手描き周回ルート · %@";
+"route.freehand.ready_subtitle" = "%@ · 約%@";
+"route.search.placeholder" = "検索して出発地・経由地・目的地を追加";
+"route.preset.walking" = "徒歩";
+"route.preset.running" = "ラン";
+"route.preset.cycling" = "自転車";
+"route.preset.driving" = "車";
+"route.loop.once" = "終点で停止";
+"route.loop.round_trip" = "往復";
+"route.loop.closed" = "周回";
+"route.realistic.short" = "自然";
+"route.speed.label" = "速度";
+"route.button.start" = "ルートシミュレーション開始";
+"route.button.pause" = "一時停止";
+"route.button.resume" = "再開";
+"route.pin.start" = "出発地";
+"route.pin.end" = "目的地";
+"route.pin.via" = "経由地 %d";
+"route.planning.calculating" = "道路に沿ってルートを計算中…";
+"route.planning.empty_title" = "道路ルートシミュレーション";
+"route.planning.empty_subtitle" = "地図をタップするか上から検索して出発地と目的地を追加";
+"route.planning.need_end_title" = "出発地を設定済み · 地図をタップして目的地を追加";
+"route.planning.start_selected" = "出発地：%@";
+"route.planning.ready_title" = "道路ルート · %@";
+"route.planning.ready_subtitle" = "%d地点 · 約%@";
+"route.notice.straight_fallback" = "この地域では道路ルートが利用できないため、直線補間に切り替えました";
+"route.notice.partial_fallback" = "一部の区間を直線補間に切り替えました";
+"route.status.waiting_lock" = "出発地のロックを待機中…";
+"route.status.waiting_relock" = "システムロックが解除されました。再ロックまで現在地で待機中…";
+"route.status.moving" = "ルートシミュレーション中";
+"route.status.moving_lap" = "シミュレーション中 · %d周目";
+"route.status.paused" = "一時停止中（現在位置を保持）";
+"route.status.completed" = "目的地に到着（位置を保持中）";
+"route.eta.done" = "到着";
+"route.save.title" = "ルートを保存";
+"route.save.placeholder" = "ルート名";
+"route.save.message" = "作成した道路ルート、プリセット、速度、ループ設定を保存します。";
+
+/* GPX Import & Export */
+"gpx.action.import" = "GPXファイルを読み込む";
+"gpx.action.import_short" = "GPX読込";
+"gpx.action.export" = "GPXファイルを書き出す";
+"gpx.action.export_short" = "GPX出力";
+"gpx.error.unreadable" = "選択したGPXファイルを読み込めませんでした。";
+"gpx.error.too_large" = "GPXファイルのサイズが上限（20 MB）を超えています。";
+"gpx.error.invalid_xml" = "無効なGPX XML形式です：%@";
+"gpx.error.no_coordinates" = "このGPXファイルに有効な座標が見つかりませんでした。";
+"gpx.error.stop_session_first" = "GPXファイルを読み込む前に、実行中のルートシミュレーションを停止してください。";
+
+/* Backup & Migration (JSON) */
+"settings.section.backup" = "バックアップと移行";
+"settings.backup.footer" = "保存済みの場所とルートをすべてJSON形式で書き出し、機種変更や共有に利用できます。読み込み時は重複を自動で除外して安全に統合します。GPXファイルの読み込みにも対応しています。";
+"backup.action.export" = "場所とルートを書き出す（JSON）";
+"backup.action.import" = "バックアップを読み込む（JSON）";
+"backup.action.import_any" = "バックアップ／GPXを読み込む";
+"backup.export.summary" = "場所 %d件 · ルート %d件";
+"backup.import.subtitle" = "Reloc JSONバックアップ・GPXファイル対応";
+"backup.import.success" = "読み込み完了：場所 %d件、ルート %d件を追加しました。";
+"backup.import.success_with_updates" = "読み込み完了：場所 %d件、ルート %d件を追加（%d件を更新）しました。";
+"backup.error.unreadable" = "選択したバックアップファイルを読み込めませんでした。";
+"backup.error.too_large" = "バックアップファイルのサイズが上限（20 MB）を超えています。";
+"backup.error.invalid_format" = "無効なJSONバックアップ形式です：%@";
+"backup.error.empty" = "このバックアップファイルに有効な場所またはルートが含まれていません。";
+"backup.error.nothing_to_export" = "書き出せる保存済みの場所またはルートがありません。";
+
+/* Starter Favorites */
+"favorite.tokyo_station.name" = "東京駅";
+"favorite.tokyo_station.subtitle" = "東京都千代田区";
+"favorite.taipei_101.name" = "台北101";
+"favorite.taipei_101.subtitle" = "台北市信義区";
+
+/* Manual Coordinate Sheet */
+"manual.title" = "座標を入力";
+"manual.section.header" = "座標と標高";
+"manual.datum.label" = "測地系";
+"manual.datum.wgs84" = "WGS-84（国際標準）";
+"manual.datum.gcj02" = "GCJ-02（中国本土）";
+"manual.lat.placeholder" = "緯度（-90〜90）";
+"manual.lon.placeholder" = "経度（-180〜180）";
+"manual.alt.placeholder" = "標高（m・空欄で地形標高を自動取得）";
+"manual.footer.invalid" = "有効な緯度（-90〜90）、経度（-180〜180）、標高（-500〜50000 m）を入力してください。";
+"manual.footer.hint" = "国際標準WGS-84座標です。標高を空欄にすると地形標高を自動取得します。";
+"manual.footer.gcj02_hint" = "中国本土のGCJ-02座標を自動でWGS-84へ変換します。中国本土以外の座標は変換されません。";
+"manual.favorite.header" = "お気に入りに保存（任意）";
+"manual.favorite.placeholder" = "場所の名前";
+
+/* Protocol Logs & Telemetry */
+"logs.title" = "テレメトリとログ";
+"logs.category.all" = "すべて";
+"logs.category.nmea" = "NMEA";
+"logs.category.errors" = "エラー";
+"logs.events_count" = "%d件のイベント";
+"logs.empty.title" = "プロトコルイベントはありません";
+"logs.empty.subtitle" = "位置情報セッションを開始すると、iAP2ハンドシェイクとNMEAストリームをリアルタイムで確認できます。";
+"logs.search.prompt" = "イベントを検索（例：FFFA / acknowledged）";
+"logs.telemetry.title" = "CoreLocation リアルタイム計測";
+"logs.telemetry.monitoring" = "iOSが報告する位置情報ソースをリアルタイム取得中";
+"logs.telemetry.idle" = "iOSが外部GPSとして認識しているかを確認";
+"logs.telemetry.start" = "計測開始";
+"logs.telemetry.coords" = "緯度 / 経度";
+"logs.telemetry.acc_alt" = "精度 / 標高";
+"logs.telemetry.simulated" = "ソフト模擬";
+"logs.telemetry.accessory" = "アクセサリ";
+"logs.telemetry.hint" = "上の「計測開始」をタップすると、iOSのsourceInformationフラグをリアルタイムで確認できます。";
+
+/* PiP Location Refresh Guide */
+"pip.header" = "Reloc · 位置情報更新";
+"pip.step_badge" = "手順 %d/3 · 監視中";
+"pip.preparing.headline" = "位置情報の更新を準備中…";
+"pip.preparing.subtitle" = "ガイドに沿って位置情報サービスを切り替えてください";
+"pip.step1.headline" = "① 位置情報サービスをオフ";
+"pip.step1.subtitle" = "オフにすると7秒カウントダウンが自動開始します";
+"pip.step1.subtitle_seconds" = "オフにすると %d 秒カウントダウンが自動開始します";
+"pip.step1.distant_subtitle_seconds" = "オフ後 %d 秒待機；15 km 超は設定で Wi-Fi も完全にオフ推奨";
+"pip.step1.restore.subtitle" = "アクセサリキャッシュを消去し、7秒カウントが自動開始します";
+"pip.step2.headline" = "② 位置情報キャッシュを消去中";
+"pip.step2.restore.headline" = "② アクセサリキャッシュを消去中";
+"pip.step2.subtitle" = "タイマー終了まで位置情報サービスはオフのまま待機";
+"pip.step3.enable.headline" = "③ 位置情報サービスをオン";
+"pip.step3.enable.subtitle" = "オンにするとRelocがアクセサリGPSを自動ロックします";
+"pip.step3.restore.subtitle" = "オンにするとiOSが本来のGPSへ即座に復帰します";
+"pip.step3.reopened.headline" = "③ 位置情報サービスを再開";
+"pip.step3.reopened.subtitle" = "アクセサリGPSをロック中、1〜2秒お待ちください…";
+"pip.step3.subscribed.headline" = "③ アクセサリGPSを購読済み";
+"pip.step3.subscribed.subtitle" = "目標座標をロック中、1〜2秒お待ちください…";
+"pip.step3.retry_longer.headline" = "未ロック · もう一度オフにしてください";
+"pip.step3.retry_longer.subtitle" = "位置情報サービスを再度オフで %d 秒待機（設定で Wi-Fi もオフ推奨）";
+"pip.step3.restoring.headline" = "③ 本来のGPSを取得中…";
+"pip.step3.restoring.subtitle" = "位置情報サービス再開済み、1〜2秒お待ちください";
+"pip.countdown.seconds" = "%d秒";
+"pip.countdown.now" = "今すぐオン！";
+"pip.finish.succeeded.headline" = "アクセサリGPS有効";
+"pip.finish.succeeded.message" = "「%@」をロックしました。他のアプリへ切り替え可能です。";
+"pip.finish.restored.headline" = "本来のGPSに復元完了";
+"pip.finish.restored.message" = "端末の本来のGPSに戻りました。他のアプリへ切り替え可能です。";
+"pip.finish.cancelled.headline" = "位置情報の更新をキャンセル";
+"pip.finish.stopped.message" = "位置情報セッションを停止しました";
+
+/* Errors */
+"error.mfi_unavailable" = "内蔵のアクセサリ認証コンポーネントを利用できません。アプリを再インストールしてください。";
+"error.virtual.no_framework" = "このiOSバージョンではCoreAccessoriesを読み込めません。";
+"error.virtual.no_client" = "このiOSバージョンでは互換性のあるACCTransportClientが見つかりません。";
+"error.virtual.incompatible_abi" = "仮想アクセサリのインターフェースに互換性がありません：%@";
+"error.virtual.socketpair" = "仮想アクセサリのsocketpairの作成に失敗しました：%s";
+"error.virtual.create_conn" = "仮想アクセサリ接続の作成がシステムにより拒否されました。プロトコルログを確認してください。";
+"error.virtual.create_endpoint" = "iAP2仮想エンドポイントの作成または公開がシステムにより拒否されました。";
+"error.virtual.no_detection" = "仮想エンドポイントからiAP2検出応答が返されませんでした。";
+
+/* App Intents & Shortcuts */
+"intent.error.permission_denied" = "Relocに位置情報の権限がありません。Relocを開き、iOSの「設定」で位置情報へのアクセスを「常に」に設定してください。";
+"intent.entity.favorite" = "保存済みの場所";
+"intent.param.favorite" = "保存済みの場所";
+"intent.param.auto_jump_settings" = "位置情報サービスを自動で開く";
+"intent.prompt.choose_favorite" = "どの保存済みの場所に設定しますか？";
+
+"intent.start_favorite.title" = "仮想位置情報を開始";
+"intent.start_favorite.desc" = "保存済みの場所を選んで仮想GPSを開始し、7秒PiPタイマーを起動してiOSの「位置情報サービス」画面へ移動しキャッシュを消去します（prefs: URLも出力します）。";
+"intent.start_favorite.short" = "位置情報を開始";
+"Locate ${place} and refresh cache" = "${place}に位置を設定してキャッシュを更新";
+
+"intent.stop.title" = "仮想位置情報を停止";
+"intent.stop.desc" = "仮想アクセサリの接続を解除し、7秒の復元PiPタイマーを起動してiOSの「位置情報サービス」画面へ直接移動し、残留キャッシュを消去します。";
+"intent.stop.short" = "位置情報を停止";
+"Stop virtual location and refresh cache" = "仮想位置情報を停止してキャッシュを更新";
+
+/* ジョイスティック */
+"mode.joystick" = "ジョイスティック";
+"joystick.button.start" = "ジョイスティック開始";
+"joystick.cruise.lock" = "自動進行";
+"joystick.cruise.locked" = "自動進行中";
+"joystick.cruise.unlock" = "自動進行解除";
+"joystick.idle.title" = "ジョイスティック · %@";
+"joystick.idle.subtitle" = "地図をタップして開始地点を選び、360° 自由に移動できます";
+"joystick.speed.label" = "移動速度";
+"joystick.status.waiting_lock" = "開始地点のロックを待機中…";
+"joystick.status.cruising" = "自動進行中（方位ロック）";
+"joystick.status.moving" = "ジョイスティック移動中";
+"joystick.status.ready" = "準備完了 · 左のパッドで移動";
+
+/* ルート目標・一時停止・途中開始 */
+"route.goal.none" = "無制限";
+"route.goal.distance" = "目標距離";
+"route.goal.laps" = "目標周回数";
+"route.goal.title" = "自動停止目標と一時停止";
+"route.goal.mode.label" = "自動停止条件";
+"route.goal.section.header" = "自動停止条件";
+"route.goal.section.footer" = "目標の累積距離または周回数に到達すると、その位置で自動停止して保持します。";
+"route.goal.chip.none" = "目標: なし";
+"route.goal.chip.distance" = "目標 %.1f km";
+"route.goal.chip.laps" = "目標 %d 周";
+"route.goal.distance.header" = "目標累積距離";
+"route.goal.distance.value" = "%.1f km で自動停止";
+"route.goal.laps.header" = "目標周回数";
+"route.goal.laps.value" = "%d 周で自動停止";
+"route.goal.laps.short" = "%d 周";
+"route.goal.laps.once_hint" = "複数周回目標を使うには、ループ設定を「往復」または「ループ」に切り替えてください。";
+"route.brief_stops.short" = "一時停止";
+"route.brief_stops.title" = "リアルな一時停止（信号待ち等）";
+"route.brief_stops.subtitle" = "移動中に 4〜15 秒程度の短い停止をランダムに挟みます";
+"route.start_progress.label" = "開始位置";
+"route.status.brief_stop" = "一時停止中（信号・休憩）…";
+"route.status.moving_lap_goal" = "ルート移動中 · %d/%d 周目";
+
+/* 遠距離警告・戻し防止プロキシルール */
+"map.distant.warning" = "現在地から %@（15 km 超）：長めのリフレッシュまたはプロキシルールを推奨";
+"map.distant.rules_button" = "対策ルール";
+"settings.refresh_countdown.title" = "PiP カウントダウン時間";
+"settings.refresh_countdown.auto" = "自動 (7s / 18s)";
+"settings.refresh_countdown.seconds" = "%d 秒";
+"route.action.reverse" = "ルートを反転";
+"settings.proxy_rules.title" = "遠距離戻し防止プロキシルール";
+"settings.proxy_rules.subtitle" = "Surge / Shadowrocket / Loon 向け安全ルール";
+"settings.shortcuts.route_summary" = "保存済みルートを選んでルートシミュレーションを開始";
+"settings.shortcuts.coord_summary" = "任意の緯度・経度（WGS-84 / GCJ-02）で仮想位置を開始";
+
+"proxy_rules.title" = "戻し防止ルール";
+"proxy_rules.intro.title" = "遠距離ロックを安定化（15 km 超）";
+"proxy_rules.intro.body" = "Apple の gs-loc ネットワーク測位ドメインのみを遮断することで、機内モードにせず遠距離座標の巻き戻りを防ぎます。";
+"proxy_rules.format.header" = "ルール形式";
+"proxy_rules.format.label" = "プロキシアプリ";
+"proxy_rules.copy" = "ルールをコピー";
+"proxy_rules.copied" = "コピーしました";
+"proxy_rules.export_file" = "モジュール / プラグイン書き出し";
+"proxy_rules.warning.footer" = "gs-loc.apple.com と gs-loc-cn.apple.com のみを遮断します。ls.apple.com 全体を遮断すると Apple マップの表示・検索・経路案内が使えなくなるため避けてください。";
+
+/* お気に入り検索・グループ・編集 */
+"places.search.placeholder" = "お気に入り・グループ・ルートを検索";
+"places.search.empty" = "一致する項目がありません";
+"places.group.all" = "すべて";
+"places.group.ungrouped" = "未分類";
+"places.action.edit" = "編集";
+"places.edit.title" = "お気に入りを編集";
+"places.edit.section.basic" = "基本情報とグループ";
+"places.edit.group.placeholder" = "グループ（任意：仕事 / ランニング / ゲーム等）";
+"places.edit.note.placeholder" = "メモ（任意）";
+"places.edit.address.placeholder" = "住所 / サブタイトル";
+"places.action.copy_coords" = "座標をコピー";
+"places.action.locate" = "この場所を選択";
+"places.action.add_waypoint" = "経由地に追加";
+"places.action.load_route" = "ルートを読み込む";
+"places.action.add_favorite" = "お気に入りに追加";
+"places.saved_badge" = "保存済み";
+"places.active_badge" = "現在";
+"places.gpx.import_subtitle" = "標準 GPX 1.0 / 1.1 トラック・ウェイポイント対応";
+
+/* 拡張ショートカット */
+"intent.error.invalid_coordinate" = "座標が無効です。緯度は -90〜90、経度は -180〜180 の範囲で入力してください。";
+"intent.error.route_not_found" = "保存済みルートが見つかりません。先に Reloc でルートを保存してください。";
+"intent.entity.route" = "保存済みルート";
+"intent.param.route" = "保存済みルート";
+"intent.param.show_refresh_guide" = "PiP リフレッシュ案内を表示";
+"intent.param.latitude" = "緯度";
+"intent.param.longitude" = "経度";
+"intent.param.altitude" = "標高 (m)";
+"intent.param.place_name" = "地点名";
+"intent.param.is_gcj02" = "GCJ-02 座標として入力";
+"intent.prompt.choose_route" = "開始する保存済みルートを選択してください";
+"intent.start_route.title" = "保存済みルートを開始";
+"intent.start_route.desc" = "保存したルートで移動シミュレーションを開始します（PiP 案内と設定遷移は任意）。";
+"intent.start_route.short" = "ルート開始";
+"Start route ${route}" = "ルート ${route} を開始";
+"intent.start_coord.title" = "座標を指定して位置を開始";
+"intent.start_coord.desc" = "指定した緯度・経度（WGS-84 / GCJ-02 対応）で仮想 GPS を開始します。";
+"Locate at (${latitude}, ${longitude})" = "座標 (${latitude}, ${longitude}) に位置を設定";

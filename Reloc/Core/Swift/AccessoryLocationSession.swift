@@ -99,9 +99,11 @@ public final class AccessoryLocationSession {
 
     public let locationBox: LiveLocationBox
     private let trajectoryDriver: TrajectoryDriver?
+    private let joystickDriver: JoystickDriver?
     private let onEvent: EventCallback
     private let onSnapshot: SnapshotCallback
     private let onTrajectoryProgress: (@Sendable (TrajectoryProgress) -> Void)?
+    private let onJoystickProgress: (@Sendable (JoystickProgress) -> Void)?
     private let onAuthenticated: (@Sendable () -> Void)?
     private let onLocationRequested: (@Sendable () -> Void)?
     private let onLocationStopped: (@Sendable () -> Void)?
@@ -113,9 +115,11 @@ public final class AccessoryLocationSession {
         initialLocation: TargetLocation,
         microJitterEnabled: Bool = false,
         trajectoryDriver: TrajectoryDriver? = nil,
+        joystickDriver: JoystickDriver? = nil,
         onEvent: @escaping EventCallback,
         onSnapshot: @escaping SnapshotCallback,
         onTrajectoryProgress: (@Sendable (TrajectoryProgress) -> Void)? = nil,
+        onJoystickProgress: (@Sendable (JoystickProgress) -> Void)? = nil,
         onAuthenticated: (@Sendable () -> Void)? = nil,
         onLocationRequested: (@Sendable () -> Void)? = nil,
         onLocationStopped: (@Sendable () -> Void)? = nil,
@@ -126,9 +130,11 @@ public final class AccessoryLocationSession {
         self.locationBox = LiveLocationBox(initialLocation)
         self.microJitterEnabled = microJitterEnabled
         self.trajectoryDriver = trajectoryDriver
+        self.joystickDriver = joystickDriver
         self.onEvent = onEvent
         self.onSnapshot = onSnapshot
         self.onTrajectoryProgress = onTrajectoryProgress
+        self.onJoystickProgress = onJoystickProgress
         self.onAuthenticated = onAuthenticated
         self.onLocationRequested = onLocationRequested
         self.onLocationStopped = onLocationStopped
@@ -140,14 +146,18 @@ public final class AccessoryLocationSession {
         ProcessInfo.processInfo.systemUptime
     }
 
-    /// Returns the live expected target coordinate (moving trajectory point when simulating a route,
+    /// Returns the live expected target coordinate (moving trajectory/joystick point when active,
     /// otherwise the static target coordinate) for accurate CoreLocation lock verification.
     public func currentComparisonLocation() -> TargetLocation {
-        trajectoryDriver?.currentTargetLocation() ?? locationBox.get()
+        trajectoryDriver?.currentTargetLocation()
+            ?? joystickDriver?.currentTargetLocation()
+            ?? locationBox.get()
     }
 
     public func isTrajectoryWaitingForLock() -> Bool {
-        trajectoryDriver?.isWaitingForLock() ?? false
+        trajectoryDriver?.isWaitingForLock()
+            ?? joystickDriver?.isWaitingForLock()
+            ?? false
     }
 
     /// Updates whether iOS CoreLocation has confirmed `isProducedByAccessory == true` for the target.
@@ -160,10 +170,16 @@ public final class AccessoryLocationSession {
             if trajectoryDriver?.releaseStartLock() == true {
                 emitEvent("trajectory_lock_released")
             }
+            if joystickDriver?.releaseStartLock() == true {
+                emitEvent("joystick_lock_released")
+            }
             sock?.nudge()
         } else {
             if trajectoryDriver?.holdForRelock() == true {
                 emitEvent("trajectory_held_for_relock")
+            }
+            if joystickDriver?.holdForRelock() == true {
+                emitEvent("joystick_held_for_relock")
             }
         }
     }
@@ -190,6 +206,37 @@ public final class AccessoryLocationSession {
 
     public func setTrajectoryRealisticMotion(_ enabled: Bool) {
         trajectoryDriver?.setRealisticMotionEnabled(enabled)
+        joystickDriver?.setRealisticMotionEnabled(enabled)
+    }
+
+    public func setTrajectoryBriefStops(_ enabled: Bool) {
+        trajectoryDriver?.setBriefStopsEnabled(enabled)
+    }
+
+    public func setJoystickVector(magnitude: Double, headingDegrees: Double?) {
+        let shouldNudge = joystickDriver?.setInput(magnitude: magnitude, headingDegrees: headingDegrees) ?? false
+        if shouldNudge {
+            stateLock.lock()
+            let sock = activeSocket
+            stateLock.unlock()
+            sock?.nudge()
+        }
+    }
+
+    public func setJoystickSpeed(_ mps: Double) {
+        joystickDriver?.setMaxSpeed(mps)
+    }
+
+    public func setJoystickCruiseLocked(_ locked: Bool) {
+        joystickDriver?.setCruiseLocked(locked)
+        stateLock.lock()
+        let sock = activeSocket
+        stateLock.unlock()
+        sock?.nudge()
+    }
+
+    public func updateJoystickAltitude(_ altitude: Double) {
+        joystickDriver?.updateAltitude(altitude)
     }
 
     /// Toggles stationary sub-meter GPS micro-jitter directly on the session thread (no main-thread timer).
@@ -602,9 +649,14 @@ public final class AccessoryLocationSession {
                     if hasKalmanReset {
                         pollSlice = 0.01
                     } else {
-                        let effectiveInterval = trajectoryDriver != nil
-                            ? min(configuration.intervalSeconds, 1.0)
-                            : configuration.intervalSeconds
+                        let effectiveInterval: TimeInterval
+                        if let joy = joystickDriver {
+                            effectiveInterval = joy.isActivelyMoving() ? min(configuration.intervalSeconds, 0.5) : min(configuration.intervalSeconds, 1.0)
+                        } else if trajectoryDriver != nil {
+                            effectiveInterval = min(configuration.intervalSeconds, 1.0)
+                        } else {
+                            effectiveInterval = configuration.intervalSeconds
+                        }
                         let nextDue = activeSentences.map { id -> TimeInterval in
                             let last = lastSent[id] ?? -.infinity
                             let minReq = minIntervals[id] ?? 0.25
@@ -736,9 +788,14 @@ public final class AccessoryLocationSession {
 
                     let tickNow = Self.monotonicNow
                     let burstActive = isFastBurstActive(now: tickNow)
-                    let effectiveInterval = trajectoryDriver != nil
-                        ? min(configuration.intervalSeconds, 1.0)
-                        : configuration.intervalSeconds
+                    let effectiveInterval: TimeInterval
+                    if let joy = joystickDriver {
+                        effectiveInterval = joy.isActivelyMoving() ? min(configuration.intervalSeconds, 0.5) : min(configuration.intervalSeconds, 1.0)
+                    } else if trajectoryDriver != nil {
+                        effectiveInterval = min(configuration.intervalSeconds, 1.0)
+                    } else {
+                        effectiveInterval = configuration.intervalSeconds
+                    }
                     let due = activeSentences.sorted().filter { id in
                         let last = lastSent[id] ?? -.infinity
                         let minReq = minIntervals[id] ?? 0.25
@@ -747,9 +804,13 @@ public final class AccessoryLocationSession {
                     }
                     if !due.isEmpty {
                         let (confirmed, jitter) = isConfirmedAndJitter()
+                        // Only apply stationary micro-jitter after CoreLocation confirms lock:
+                        // applying ±0.6m random hops at 4 Hz during unconfirmed fastBurst creates
+                        // unphysical 4–5 m/s jumps while claiming speedKnots = 0.0.
+                        let effectiveStationaryJitter = confirmed && jitter
                         var target: TargetLocation
                         if let driver = trajectoryDriver {
-                            let step = driver.advance(toMonotonicTime: tickNow, stationaryJitter: jitter)
+                            let step = driver.advance(toMonotonicTime: tickNow, stationaryJitter: effectiveStationaryJitter)
                             target = step.location
                             locationBox.set(target)
                             if step.didTeleportLap {
@@ -761,9 +822,14 @@ public final class AccessoryLocationSession {
                                 }
                             }
                             onTrajectoryProgress?(step.progress)
+                        } else if let joy = joystickDriver {
+                            let step = joy.advance(toMonotonicTime: tickNow, stationaryJitter: effectiveStationaryJitter)
+                            target = step.location
+                            locationBox.set(target)
+                            onJoystickProgress?(step.progress)
                         } else {
                             target = locationBox.get()
-                            if jitter {
+                            if effectiveStationaryJitter {
                                 target = CoordinateTransform.applyMicroJitter(to: target)
                             }
                         }

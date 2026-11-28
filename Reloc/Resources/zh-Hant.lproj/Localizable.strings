@@ -1,0 +1,429 @@
+/* 頁籤與通用 */
+"tab.location" = "定位";
+"tab.settings" = "設定";
+"tab.logs" = "實測與日誌";
+"common.alert.title" = "提示";
+"common.ok" = "確定";
+"common.cancel" = "取消";
+"common.close" = "關閉";
+"common.save" = "儲存";
+"common.apply" = "套用";
+"common.delete" = "刪除";
+"common.rename" = "重新命名";
+"common.clear" = "清除";
+"common.retry" = "重試";
+"common.stop" = "停止";
+"common.restore" = "恢復";
+"common.enable" = "前往開啟";
+
+/* 外觀、地圖來源與樣式 */
+"appearance.system" = "跟隨系統";
+"appearance.light" = "淺色";
+"appearance.dark" = "深色";
+
+"map.source.apple" = "Apple 地圖（系統預設）";
+"map.source.esri_street" = "全球街道圖（Esri · WGS-84）";
+"map.source.osm" = "OpenStreetMap（開源 · WGS-84）";
+"map.source.esri_satellite" = "全球衛星圖（Esri · WGS-84）";
+
+"map.source.apple.short" = "Apple 地圖";
+"map.source.esri_street.short" = "全球街道";
+"map.source.osm.short" = "OSM 地圖";
+"map.source.esri_satellite.short" = "全球衛星";
+
+"map.style.standard" = "標準";
+"map.style.satellite" = "衛星";
+"map.style.hybrid" = "混合";
+
+/* 設定 */
+"settings.title" = "設定";
+"settings.section.location" = "定位選項";
+"settings.nmea_interval" = "NMEA 傳送間隔 · %.1f 秒";
+"settings.duration" = "工作階段時長";
+"settings.duration.continuous" = "持續執行";
+"settings.duration.seconds" = "%d 秒";
+"settings.duration.hours" = "%d 小時";
+"settings.gcj02" = "中國大陸地圖 GCJ-02 糾偏";
+"settings.micro_jitter" = "自然微漂移（±0.6m GPS 抖動）";
+"settings.dynamic_island.title" = "動態島背景提示";
+"settings.dynamic_island.on_hint" = "背景執行時在動態島 / 狀態列顯示藍色定位提示";
+"settings.dynamic_island.off_ready" = "已隱藏動態島提示（靜默背景定位執行中）";
+"settings.dynamic_island.off_need_always" = "需將定位權限設為「永遠」才能徹底隱藏動態島提示";
+"settings.background_mode.title" = "背景執行模式";
+"settings.background_mode.always" = "原生定位保活已就緒（無音訊佔用）";
+"settings.background_mode.upgrade_hint" = "建議將定位權限設為「永遠」以提升鎖定螢幕長時穩定性";
+"settings.background_mode.action" = "前往設定";
+"settings.background_mode.footer" = "已移除常駐靜音音訊保活，全程僅使用系統原生背景定位模式執行，零音訊衝突且更省電；長時間鎖定螢幕掛機建議在系統設定中將 Reloc 定位權限設為「永遠」。";
+"settings.section.appearance" = "地圖與外觀";
+"settings.appearance" = "外觀主題";
+"settings.language" = "應用程式語言";
+"settings.language.system" = "跟隨系統";
+"settings.map_source" = "地圖資料來源";
+"settings.apple_map_style" = "Apple 地圖樣式";
+"settings.appearance.footer" = "預設使用 Apple 系統地圖（MapKit 原生）；如需純國際 WGS-84 圖磚，可切換為全球街道圖、OpenStreetMap 或全球衛星圖。";
+"settings.section.shortcuts" = "捷徑";
+"settings.shortcuts.start_summary" = "選取收藏地點 → 啟動定位 → 跳轉系統定位頁清除快取";
+"settings.shortcuts.stop_summary" = "停止定位 → 顯示倒數浮窗並跳轉系統定位頁恢復真實 GPS";
+"settings.shortcuts.open_app" = "開啟 Apple「捷徑」";
+"settings.shortcuts.copy_prefs_title" = "複製系統定位服務直達連結";
+"settings.shortcuts.copied" = "已複製";
+"settings.shortcuts.footer" = "在「捷徑」App 搜尋 Reloc 即可加入以上動作；若需自行串接跳轉，可在「開始虛擬定位」後接「打開 URL」並傳入 prefs:root=Privacy&path=LOCATION。";
+
+/* 地圖選點 */
+"map.search.placeholder" = "搜尋地點或輸入 緯度, 經度";
+"map.search.clear" = "清除搜尋";
+"map.search.manual" = "手動輸入座標";
+"map.menu.source" = "地圖資料來源";
+"map.menu.style" = "Apple 地圖樣式";
+"map.menu.coordinates" = "座標";
+"map.menu.manual_input" = "手動輸入經緯度";
+"map.pin.active" = "目前位置";
+"map.pin.pending" = "待更新位置";
+"map.unknown_place" = "未知地點";
+"map.selected_place" = "選取的位置";
+"map.geocoding" = "正在解析地名…";
+"map.wgs84_coord" = "WGS-84 座標";
+
+"map.status.confirmed" = "外設定位已生效 ✓";
+"map.status.pending_refresh" = "待重新整理生效 · ACK %d";
+"map.status.switching" = "切換定位中 · ACK %d";
+"map.status.auth_refresh" = "已驗證 · 待重新整理訂閱";
+"map.status.auth_waking" = "已驗證 · 喚醒訂閱中…";
+"map.status.connecting" = "正在啟動定位…";
+"map.status.idle" = "就緒 · 選點後開始";
+
+"map.altitude.resolving" = "海拔解析中…";
+"map.altitude.value" = "海拔 %.1fm";
+
+"map.interrupted.title" = "上次定位工作階段意外中斷";
+"map.interrupted.subtitle" = "恢復上次位置：%@";
+
+"map.stop_confirm.title" = "停止定位並恢復真實位置？";
+"map.stop_confirm.button" = "停止並恢復";
+"map.stop_confirm.message" = "停止後系統將逐步切回本機真實 GPS 位置。";
+
+"map.permission.denied" = "未開啟定位權限，無法自動觸發外設訂閱";
+"map.permission.reduced" = "未開啟「準確位置」，可能導致外設 GPS 無法鎖定或偏移";
+"map.restored.notice" = "已恢復本機真實 GPS 定位";
+"map.last_error" = "上次錯誤：%@";
+
+"map.button.update_location" = "更新至此位置";
+"map.button.stop_restore" = "停止並恢復";
+"map.button.start" = "開始定位";
+
+"map.restore.banner.stale" = "外設連線已中斷，但系統仍在快取上次定位（室內弱訊號常見）。點擊下方一鍵重新整理定位服務即可立即恢復真實位置。";
+"map.restore.banner.button" = "一鍵重新整理定位服務（恢復真實位置）";
+"map.restore.banner.working" = "已傳送中斷與失效報文，正在喚醒本機真實 GPS 恢復定位…";
+"map.restore.banner.refresh_now" = "立即重新整理";
+
+"map.live.confirmed.title" = "外設 GPS 已 100% 生效";
+"map.live.confirmed.subtitle" = "系統已確認外設來源（isProducedByAccessory = true），可直接切換至其他 App";
+"map.live.waiting_sub.detail" = "MFi 驗證已通過，但系統尚未訂閱外設 GPS。點擊下方一鍵重新整理（含懸浮倒數計時）即可喚醒訂閱。";
+"map.live.pending_lock.detail" = "NMEA 已連通，但系統仍在沿用本機快取定位。點擊下方一鍵重新整理（含懸浮倒數計時）即可強制切換。";
+"map.live.pending_lock.distant_detail" = "目標距真實位置 >15 km，已被系統 Wi-Fi / 基地台篩選（CLNmeaScreener）攔截。點擊下方一鍵重新整理；開啟飛航模式時請同時於系統「設定 → Wi-Fi」徹底關閉 Wi-Fi（控制中心僅中斷仍會掃描），或搭配防回彈規則使用。";
+"map.live.refresh_button" = "一鍵重新整理定位服務（浮窗指引）";
+"map.live.connecting" = "正在建立本機外設通道並完成 MFi 驗證…";
+"map.live.waking_sub" = "驗證成功，正在自動喚醒系統外設 GPS 訂閱…";
+"map.live.injecting" = "正在高速注入 NMEA 座標，等待系統鎖定外設來源…";
+"map.live.force_refresh" = "強制重新整理";
+
+"map.search.error.not_found" = "找不到相符的地點，請嘗試其他關鍵字";
+"map.search.error.throttled" = "搜尋過於頻繁，請稍後再試";
+"map.search.error.network" = "搜尋失敗，請檢查網路連線";
+
+/* 收藏與路線 */
+"places.title" = "收藏與路線";
+"places.picker" = "分類";
+"places.tab.favorites" = "收藏 (%d)";
+"places.tab.routes" = "路線 (%d)";
+"places.tab.recents" = "最近 (%d)";
+"places.save_current.header" = "收藏目前選取的位置";
+"places.name.placeholder" = "輸入名稱";
+"places.favorites.header" = "已儲存的收藏";
+"places.favorites.empty" = "尚無收藏地點";
+"places.routes.save_current" = "收藏目前規劃的路線";
+"places.routes.header" = "已儲存的常用路線";
+"places.routes.empty" = "尚無收藏路線，在軌跡模式規劃後可點擊書籤儲存";
+"places.recents.header" = "最近使用（最多 30 筆）";
+"places.recents.empty" = "尚無最近使用紀錄";
+"places.rename.title" = "重新命名";
+"places.rename.placeholder" = "新名稱";
+
+/* 模式與軌跡模擬 */
+"mode.fixed" = "定格";
+"mode.route" = "軌跡";
+"route.creation.road" = "貼路規劃";
+"route.creation.freehand" = "手繪軌跡";
+"route.freehand.banner" = "單指在地圖上繪製軌跡（靠近起點放開自動閉合繞圈）";
+"route.freehand.start_draw" = "開始手繪";
+"route.freehand.redraw" = "重繪";
+"route.freehand.stop_draw" = "退出繪製";
+"route.freehand.drawing_title" = "正在手繪軌跡…";
+"route.freehand.drawing_subtitle" = "單指在地圖上描繪路徑，雙指可縮放地圖";
+"route.freehand.empty_title" = "手繪自由軌跡";
+"route.freehand.empty_subtitle" = "適合操場繞圈跑步或公園環線，點擊「開始手繪」直接描繪";
+"route.freehand.ready_title" = "手繪軌跡 · %@";
+"route.freehand.ready_loop_title" = "手繪閉合軌跡 · %@";
+"route.freehand.ready_subtitle" = "%@ · 預估 %@";
+"route.search.placeholder" = "搜尋加入起點、途經點或終點";
+"route.preset.walking" = "步行";
+"route.preset.running" = "跑步";
+"route.preset.cycling" = "騎車";
+"route.preset.driving" = "開車";
+"route.loop.once" = "單次定格";
+"route.loop.round_trip" = "折返往返";
+"route.loop.closed" = "閉合循環";
+"route.realistic.short" = "擬真";
+"route.speed.label" = "移動速度";
+"route.button.start" = "開始軌跡模擬";
+"route.button.pause" = "暫停";
+"route.button.resume" = "繼續";
+"route.pin.start" = "起點";
+"route.pin.end" = "終點";
+"route.pin.via" = "途經點 %d";
+"route.planning.calculating" = "正在沿道路規劃軌跡…";
+"route.planning.empty_title" = "貼路軌跡模擬";
+"route.planning.empty_subtitle" = "點擊地圖或上方搜尋加入起點與終點（支援多途經點與長按拖動微調）";
+"route.planning.need_end_title" = "已選起點 · 請點擊地圖加入終點";
+"route.planning.start_selected" = "起點：%@";
+"route.planning.ready_title" = "貼路軌跡 · %@";
+"route.planning.ready_subtitle" = "%d 個途經點 · 預估 %@";
+"route.notice.straight_fallback" = "此區域無道路導航資料，已自動改用直線插值軌跡";
+"route.notice.partial_fallback" = "部分路段無道路資料，已自動使用直線銜接";
+"route.status.waiting_lock" = "等待鎖定起點後出發…";
+"route.status.waiting_relock" = "系統脫鎖/被攔截，已原地暫停等待重新鎖定…";
+"route.status.moving" = "軌跡模擬執行中";
+"route.status.moving_lap" = "軌跡模擬中 · 第 %d 圈";
+"route.status.paused" = "軌跡已暫停（目前位置定格）";
+"route.status.completed" = "已抵達目標（定格停留）";
+"route.eta.done" = "已抵達";
+"route.save.title" = "收藏常用路線";
+"route.save.placeholder" = "輸入路線名稱";
+"route.save.message" = "將儲存目前軌跡、模式、速度與停止目標設定。";
+
+/* GPX 匯入與匯出 */
+"gpx.action.import" = "匯入 GPX 軌跡";
+"gpx.action.import_short" = "匯入 GPX";
+"gpx.action.export" = "匯出 GPX 檔案";
+"gpx.action.export_short" = "匯出 GPX";
+"gpx.error.unreadable" = "無法讀取所選的 GPX 檔案。";
+"gpx.error.too_large" = "GPX 檔案大小超過 20 MB 上限。";
+"gpx.error.invalid_xml" = "GPX 檔案格式無效：%@";
+"gpx.error.no_coordinates" = "此 GPX 檔案中找不到有效座標點。";
+"gpx.error.stop_session_first" = "請先停止目前的軌跡模擬，再匯入新的 GPX 檔案。";
+
+/* 資料備份與遷移 (JSON) */
+"settings.section.backup" = "資料備份與遷移";
+"settings.backup.footer" = "可將全部收藏地點與常用路線匯出為 JSON 備份，方便換機還原、備份或分享；匯入時會自動去重合併且不覆蓋現有資料，也支援直接匯入 GPX 軌跡檔。";
+"backup.action.export" = "匯出收藏與路線（JSON 備份）";
+"backup.action.import" = "匯入備份（JSON）";
+"backup.action.import_any" = "匯入備份或 GPX 檔案";
+"backup.export.summary" = "%d 個收藏 · %d 條路線";
+"backup.import.subtitle" = "支援 Reloc JSON 備份與標準 GPX 軌跡";
+"backup.import.success" = "匯入完成：新增 %d 個收藏地點、%d 條路線。";
+"backup.import.success_with_updates" = "匯入完成：新增 %d 個收藏地點、%d 條路線（更新 %d 項）。";
+"backup.error.unreadable" = "無法讀取所選的備份檔案。";
+"backup.error.too_large" = "備份檔案大小超過 20 MB 上限。";
+"backup.error.invalid_format" = "備份 JSON 格式無效：%@";
+"backup.error.empty" = "此備份檔案中未包含有效的收藏或路線資料。";
+"backup.error.nothing_to_export" = "目前尚無可匯出的收藏地點或常用路線。";
+
+/* 預設收藏 */
+"favorite.tokyo_station.name" = "東京車站";
+"favorite.tokyo_station.subtitle" = "日本東京都千代田區";
+"favorite.taipei_101.name" = "台北 101";
+"favorite.taipei_101.subtitle" = "台北市信義區";
+
+/* 手動輸入座標 */
+"manual.title" = "手動輸入座標";
+"manual.section.header" = "座標與海拔";
+"manual.datum.label" = "座標系統";
+"manual.datum.wgs84" = "WGS-84（全球 GPS）";
+"manual.datum.gcj02" = "GCJ-02（中國大陸地圖）";
+"manual.lat.placeholder" = "緯度 (-90 ~ 90)";
+"manual.lon.placeholder" = "經度 (-180 ~ 180)";
+"manual.alt.placeholder" = "海拔 (公尺，留空自動取得地形海拔)";
+"manual.footer.invalid" = "請輸入有效的緯度（-90 ~ 90）、經度（-180 ~ 180）及海拔（-500 ~ 50000 公尺）。";
+"manual.footer.hint" = "全球標準 WGS-84 座標；留空海拔將自動查詢真實地形海拔，填入數值則會固定使用該海拔。";
+"manual.footer.gcj02_hint" = "將自動把中國大陸 GCJ-02 座標精準反算為標準 WGS-84；台灣、港澳及海外座標保持原值不偏移。";
+"manual.favorite.header" = "儲存至收藏（選填）";
+"manual.favorite.placeholder" = "地點名稱";
+
+/* 實測與日誌 */
+"logs.title" = "定位實測與日誌";
+"logs.category.all" = "全部";
+"logs.category.nmea" = "NMEA";
+"logs.category.errors" = "錯誤";
+"logs.events_count" = "%d 筆事件";
+"logs.empty.title" = "尚無協定事件";
+"logs.empty.subtitle" = "開始定位後，這裡會即時顯示連線交握與 NMEA 資料流。";
+"logs.search.prompt" = "篩選事件（如 FFFA / acknowledged）";
+"logs.telemetry.title" = "CoreLocation 即時實測";
+"logs.telemetry.monitoring" = "正在即時讀取系統回報的定位來源";
+"logs.telemetry.idle" = "驗證系統是否辨識為外設 GPS";
+"logs.telemetry.start" = "開始實測";
+"logs.telemetry.coords" = "緯度 / 經度";
+"logs.telemetry.acc_alt" = "精確度 / 海拔";
+"logs.telemetry.simulated" = "軟體模擬";
+"logs.telemetry.accessory" = "外設來源";
+"logs.telemetry.hint" = "點擊右上角「開始實測」，即可即時檢視 iOS sourceInformation 中的軟體模擬與外設定位標記。";
+
+/* 子母畫面定位重新整理指引 */
+"pip.header" = "Reloc · 一鍵觸發定位";
+"pip.step_badge" = "步驟 %d/3 · 即時監測";
+"pip.preparing.headline" = "準備重新整理定位服務…";
+"pip.preparing.subtitle" = "請依浮窗指引關閉再重新開啟定位服務";
+"pip.step1.headline" = "① 關閉系統「定位服務」";
+"pip.step1.subtitle" = "關閉後將自動開始倒數計時，無需手動計時";
+"pip.step1.subtitle_seconds" = "關閉後將自動開始 %d 秒倒數計時，無需手動計時";
+"pip.step1.distant_subtitle_seconds" = "關閉後自動倒數 %d 秒；遠距離請確認設定內 Wi-Fi 已徹底關閉";
+"pip.step1.restore.subtitle" = "清除外設殘留快取，關閉後將自動開始倒數";
+"pip.step2.headline" = "② 正在清除系統定位快取";
+"pip.step2.restore.headline" = "② 正在清除外設殘留快取";
+"pip.step2.subtitle" = "請保持「定位服務」關閉，等待倒數結束";
+"pip.step3.enable.headline" = "③ 請重新開啟「定位服務」";
+"pip.step3.enable.subtitle" = "開啟開關後 Reloc 將自動鎖定外設 GPS";
+"pip.step3.restore.subtitle" = "開啟開關後將立即切回本機真實 GPS";
+"pip.step3.reopened.headline" = "③ 系統已重新開啟定位服務";
+"pip.step3.reopened.subtitle" = "正在高速鎖定外設 GPS，請稍候 1–2 秒…";
+"pip.step3.subscribed.headline" = "③ 系統已重新訂閱外設 GPS";
+"pip.step3.subscribed.subtitle" = "正在高速鎖定目標座標，請稍候 1–2 秒…";
+"pip.step3.retry_longer.headline" = "仍未鎖定 · 請再關閉一次";
+"pip.step3.retry_longer.subtitle" = "直接再次關閉「定位服務」將倒數 %d 秒，並確認設定中 Wi-Fi 已關閉";
+"pip.step3.restoring.headline" = "③ 正在重新取得本機真實定位…";
+"pip.step3.restoring.subtitle" = "已重新開啟定位服務，請稍候 1–2 秒";
+"pip.countdown.seconds" = "%d 秒";
+"pip.countdown.now" = "現在重新開啟！";
+"pip.finish.succeeded.headline" = "外設定位已 100% 生效";
+"pip.finish.succeeded.message" = "已鎖定「%@」，可切換至任意 App 使用";
+"pip.finish.restored.headline" = "本機真實定位已恢復";
+"pip.finish.restored.message" = "已切回本機真實 GPS，可切換至任意 App 使用";
+"pip.finish.cancelled.headline" = "定位重新整理已取消";
+"pip.finish.stopped.message" = "定位工作階段已停止";
+
+/* 錯誤訊息 */
+"error.mfi_unavailable" = "內建配件驗證元件無法使用，請重新安裝應用程式。";
+"error.virtual.no_framework" = "此 iOS 版本無法載入虛擬外設介面 CoreAccessories。";
+"error.virtual.no_client" = "此 iOS 版本沒有相容的 ACCTransportClient。";
+"error.virtual.incompatible_abi" = "虛擬外設介面不相容：%@";
+"error.virtual.socketpair" = "虛擬外設 socketpair 失敗：%s";
+"error.virtual.create_conn" = "系統未允許建立虛擬外設連線，請查看協定日誌。";
+"error.virtual.create_endpoint" = "系統未允許建立或發佈 iAP2 虛擬端點。";
+"error.virtual.no_detection" = "虛擬端點未回傳 iAP2 偵測回應。";
+
+/* App Intents 與捷徑 */
+"intent.error.permission_denied" = "Reloc 未取得系統定位權限，請先開啟 Reloc 並在系統設定中設為「永遠」允許。";
+"intent.entity.favorite" = "收藏地點";
+"intent.param.favorite" = "收藏地點";
+"intent.param.auto_jump_settings" = "自動跳轉系統定位頁";
+"intent.prompt.choose_favorite" = "請選擇要定位的收藏地點";
+
+"intent.start_favorite.title" = "開始虛擬定位";
+"intent.start_favorite.desc" = "選擇收藏地點並啟動虛擬定位，可選顯示重新整理倒數浮窗並跳轉系統「定位服務」頁面清除快取（同時輸出 prefs: 連結）。";
+"intent.start_favorite.short" = "開始定位";
+"Locate ${place} and refresh cache" = "定位至 ${place} 並重新整理快取";
+
+"intent.stop.title" = "關閉虛擬定位";
+"intent.stop.desc" = "中斷虛擬外設定位，可選顯示恢復倒數浮窗並跳轉系統「定位服務」頁清除殘留快取恢復真實 GPS。";
+"intent.stop.short" = "關閉定位";
+"Stop virtual location and refresh cache" = "關閉虛擬定位並重新整理恢復";
+
+/* 虛擬搖桿 */
+"mode.joystick" = "搖桿";
+"joystick.button.start" = "開始搖桿漫遊";
+"joystick.cruise.lock" = "鎖定巡航";
+"joystick.cruise.locked" = "巡航中";
+"joystick.cruise.unlock" = "解除巡航";
+"joystick.idle.title" = "搖桿 · %@";
+"joystick.idle.subtitle" = "點擊地圖設定起點，啟動後可 360° 推桿自由移動";
+"joystick.speed.label" = "搖桿速度";
+"joystick.status.waiting_lock" = "等待鎖定起點後可推桿移動…";
+"joystick.status.cruising" = "搖桿巡航中（已鎖定航向）";
+"joystick.status.moving" = "搖桿移動中";
+"joystick.status.ready" = "搖桿已就緒 · 拖動左側搖桿移動";
+
+/* 軌跡目標里程 / 圈數 / 擬真停頓 / 中段起跑 */
+"route.goal.none" = "不限";
+"route.goal.distance" = "目標里程";
+"route.goal.laps" = "目標圈數";
+"route.goal.title" = "自動停止目標與停頓";
+"route.goal.mode.label" = "停止條件";
+"route.goal.section.header" = "自動停止條件";
+"route.goal.section.footer" = "達到目標累計里程或目標圈數後，自動在目前位置定格停止。";
+"route.goal.chip.none" = "目標：不限";
+"route.goal.chip.distance" = "目標 %.1f km";
+"route.goal.chip.laps" = "目標 %d 圈";
+"route.goal.distance.header" = "目標累計里程";
+"route.goal.distance.value" = "滿 %.1f km 自動停止";
+"route.goal.laps.header" = "目標總圈數";
+"route.goal.laps.value" = "滿 %d 圈自動停止";
+"route.goal.laps.short" = "%d 圈";
+"route.goal.laps.once_hint" = "請將循環模式切為「折返往返」或「閉合循環」以啟用多圈目標。";
+"route.brief_stops.short" = "擬真停頓";
+"route.brief_stops.title" = "模擬紅綠燈 / 短暫停頓";
+"route.brief_stops.subtitle" = "行進中隨機短暫停留 4–15 秒，模擬等紅綠燈或喝水";
+"route.start_progress.label" = "起跑位置";
+"route.status.brief_stop" = "擬真停頓中（紅綠燈 / 停留）…";
+"route.status.moving_lap_goal" = "軌跡模擬中 · 第 %d/%d 圈";
+
+/* 遠距離預警與防回彈代理規則 */
+"map.distant.warning" = "距目前真實位置 %@（>15 km），建議使用較長倒數時間或防回彈規則";
+"map.distant.rules_button" = "防回彈規則";
+"settings.refresh_countdown.title" = "重新整理浮窗倒數";
+"settings.refresh_countdown.auto" = "自動 (7s / 18s)";
+"settings.refresh_countdown.seconds" = "%d 秒";
+"route.action.reverse" = "反轉路線";
+"settings.proxy_rules.title" = "遠距離防回彈代理規則";
+"settings.proxy_rules.subtitle" = "Surge / Shadowrocket / Loon 安全規則（不影響地圖）";
+"settings.shortcuts.route_summary" = "選擇已收藏路線並直接啟動軌跡模擬";
+"settings.shortcuts.coord_summary" = "支援直接傳入任意經緯度（WGS-84 或 GCJ-02）連動自動化";
+
+"proxy_rules.title" = "防回彈代理規則";
+"proxy_rules.intro.title" = "穩定鎖定遠距離座標（>15 km）";
+"proxy_rules.intro.body" = "僅封鎖 Apple 的 gs-loc Wi-Fi/基地台輔助驗證網域，可在不開啟飛航模式的情況下大幅降低遠距離回彈機率。";
+"proxy_rules.format.header" = "規則格式";
+"proxy_rules.format.label" = "代理軟體";
+"proxy_rules.copy" = "一鍵複製規則";
+"proxy_rules.copied" = "已複製到剪貼簿";
+"proxy_rules.export_file" = "匯出模組 / 外掛檔案";
+"proxy_rules.warning.footer" = "僅封鎖 gs-loc.apple.com 與 gs-loc-cn.apple.com。請勿整段封鎖 ls.apple.com，否則會導致 Apple 地圖圖磚、地點搜尋與道路規劃失效。";
+
+/* 收藏搜尋、分組與完整編輯 */
+"places.search.placeholder" = "搜尋收藏、分組或路線";
+"places.search.empty" = "找不到相符項目";
+"places.group.all" = "全部";
+"places.group.ungrouped" = "未分組";
+"places.action.edit" = "編輯";
+"places.edit.title" = "編輯收藏地點";
+"places.edit.section.basic" = "基本資訊與分組";
+"places.edit.group.placeholder" = "分組標籤（選填，如 打卡 / 跑步 / 遊戲）";
+"places.edit.note.placeholder" = "備註（選填）";
+"places.edit.address.placeholder" = "地址 / 副標題";
+"places.action.copy_coords" = "複製座標";
+"places.action.locate" = "選擇此位置";
+"places.action.add_waypoint" = "設為途經點";
+"places.action.load_route" = "載入此路線";
+"places.action.add_favorite" = "加入收藏";
+"places.saved_badge" = "已收藏";
+"places.active_badge" = "目前";
+"places.gpx.import_subtitle" = "支援標準 GPX 1.0 / 1.1 軌跡與航點";
+
+/* 擴充捷徑 */
+"intent.error.invalid_coordinate" = "座標無效：緯度須在 -90~90，經度須在 -180~180 之間。";
+"intent.error.route_not_found" = "找不到對應的收藏路線，請先在 Reloc 中儲存路線。";
+"intent.entity.route" = "收藏路線";
+"intent.param.route" = "收藏路線";
+"intent.param.show_refresh_guide" = "顯示子母畫面重新整理浮窗";
+"intent.param.latitude" = "緯度";
+"intent.param.longitude" = "經度";
+"intent.param.altitude" = "海拔（公尺）";
+"intent.param.place_name" = "地點名稱";
+"intent.param.is_gcj02" = "輸入為 GCJ-02 座標";
+"intent.prompt.choose_route" = "請選擇要模擬的收藏路線";
+"intent.start_route.title" = "開始收藏路線";
+"intent.start_route.desc" = "直接載入並啟動一條已收藏的軌跡路線，可選顯示重新整理浮窗並跳轉系統定位服務頁。";
+"intent.start_route.short" = "開始軌跡";
+"Start route ${route}" = "啟動路線 ${route}";
+"intent.start_coord.title" = "指定座標定位";
+"intent.start_coord.desc" = "依自訂經緯度（支援 WGS-84 與 GCJ-02）啟動虛擬外設定位，適合自動化與 NFC 連動。";
+"Locate at (${latitude}, ${longitude})" = "定位至座標 (${latitude}, ${longitude})";

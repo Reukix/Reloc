@@ -1,0 +1,2 @@
+"NSLocationWhenInUseUsageDescription" = "위치 주입 중 Reloc을 백그라운드에서 유지하고 시스템 위치 서비스 구독을 트리거하는 데 사용됩니다.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "위치 주입 중 Reloc을 백그라운드에서 지속적으로 유지하고 시스템 중단으로 가상 위치가 해제되는 것을 방지하는 데 사용됩니다.";

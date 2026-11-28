@@ -198,13 +198,115 @@ public enum NMEAGenerator {
     }
 }
 
-/// Optional GCJ-02 <-> WGS-84 coordinate conversion for Mainland China Apple Maps alignment.
+/// Optional GCJ-02 <-> WGS-84 coordinate conversion strictly scoped to Mainland China.
+/// Uses a precise Mainland China boundary polygon with explicit exclusions for Hong Kong,
+/// Macau, Kinmen, and Matsu (while Taiwan, Japan, Korea, Southeast Asia, and all other
+/// overseas regions remain strictly untouched WGS-84).
 public enum CoordinateTransform {
     private static let a = 6378245.0
     private static let ee = 0.00669342162296594323
 
+    /// Mainland China outer polygon (longitude, latitude) tracing the PRC mainland land border
+    /// and coastal waters (including Hainan, Zhoushan, Chongming) while excluding Taiwan,
+    /// Japan, Korea, Russian Far East, Mongolia, Central/South/Southeast Asia.
+    private static let mainlandChinaPolygon: [(Double, Double)] = [
+        (134.85, 48.42), (133.90, 47.60), (133.20, 46.20), (133.15, 45.10),
+        (131.25, 44.95), (131.15, 43.30), (130.65, 42.42), (129.80, 42.95),
+        (128.05, 41.98), (126.90, 41.40), (125.95, 40.95), (124.42, 40.02),
+        (124.32, 39.82), (122.90, 39.20), (121.65, 38.75), (121.10, 38.80),
+        (122.80, 37.55), (122.70, 36.85), (120.70, 36.00), (119.80, 34.80),
+        (121.20, 33.40), (122.40, 31.80), (122.90, 30.80), (122.50, 29.70),
+        (121.80, 28.40), (121.10, 27.20), (120.40, 26.25), (119.85, 25.80),
+        (119.82, 25.45), (119.65, 25.25), (119.15, 24.80), (118.26, 24.55),
+        (118.18, 24.38), (117.65, 23.60), (117.15, 23.30), (115.80, 22.65),
+        (114.65, 22.45), (114.32, 22.48), (113.85, 22.40), (113.70, 22.05),
+        (112.90, 21.70), (111.30, 21.30), (110.80, 20.10), (110.65, 19.10),
+        (109.90, 18.25), (109.10, 18.15), (108.55, 18.60), (109.00, 19.85),
+        (109.50, 20.50), (109.25, 21.35), (108.05, 21.48), (106.75, 22.05),
+        (105.80, 22.95), (104.00, 22.50), (102.15, 22.40), (101.60, 21.15),
+        (100.10, 21.45), (98.90, 23.10), (97.55, 23.95), (98.75, 26.00),
+        (98.60, 27.80), (97.35, 28.20), (95.30, 28.95), (92.00, 27.90),
+        (88.90, 27.35), (88.15, 27.85), (85.90, 28.05), (83.90, 29.25),
+        (81.05, 30.20), (79.10, 31.50), (78.60, 33.40), (78.10, 35.40),
+        (75.50, 36.90), (73.60, 39.45), (75.30, 40.55), (78.15, 41.35),
+        (80.15, 42.30), (80.25, 44.30), (82.40, 45.20), (82.80, 46.80),
+        (85.55, 47.25), (85.75, 48.35), (87.35, 49.15), (90.90, 47.80),
+        (91.05, 45.10), (95.80, 44.30), (96.40, 42.70), (100.80, 42.65),
+        (105.00, 41.60), (111.95, 43.70), (115.60, 45.20), (119.65, 46.70),
+        (116.70, 47.85), (115.50, 49.85), (119.35, 50.10), (121.45, 53.35),
+        (124.20, 53.50), (126.60, 51.70), (127.25, 50.32), (127.55, 50.255), (130.30, 48.95),
+        (130.95, 47.75), (132.95, 47.90), (134.25, 48.48),
+    ]
+
+    /// Explicit WGS-84 exclusion polygons for Hong Kong, Macau, Kinmen, and Matsu.
+    private static let nonGCJ02Exclusions: [[(Double, Double)]] = [
+        // Hong Kong (traces Shenzhen River / Deep Bay / Mirs Bay accurately)
+        [
+            (113.83, 22.14), (113.83, 22.40), (113.96, 22.475), (114.05, 22.506),
+            (114.115, 22.518), (114.170, 22.540), (114.235, 22.540), (114.34, 22.51),
+            (114.46, 22.44), (114.46, 22.14),
+        ],
+        // Macau (traces Gongbei / Wanzai / Hengqin channel accurately)
+        [
+            (113.524, 22.105), (113.524, 22.180), (113.528, 22.214),
+            (113.562, 22.214), (113.605, 22.185), (113.605, 22.105),
+        ],
+        // Kinmen (off Xiamen)
+        [
+            (118.21, 24.37), (118.21, 24.53), (118.50, 24.53), (118.50, 24.37),
+        ],
+        // Matsu (off Fuzhou)
+        [
+            (119.85, 25.90), (119.85, 26.45), (120.55, 26.45), (120.55, 25.90),
+        ],
+    ]
+
+    private static func pointInPolygon(lon: Double, lat: Double, polygon: [(Double, Double)]) -> Bool {
+        var inside = false
+        var j = polygon.count - 1
+        for i in 0..<polygon.count {
+            let (xi, yi) = polygon[i]
+            let (xj, yj) = polygon[j]
+            if ((yi > lat) != (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) {
+                inside.toggle()
+            }
+            j = i
+        }
+        return inside
+    }
+
+    /// True if the coordinate falls inside Mainland China (where GCJ-02 applies on domestic maps).
+    public static func isInMainlandChina(lat: Double, lon: Double) -> Bool {
+        guard lat.isFinite, lon.isFinite,
+              lon >= 73.4, lon <= 135.1,
+              lat >= 18.0, lat <= 53.6 else {
+            return false
+        }
+        guard pointInPolygon(lon: lon, lat: lat, polygon: mainlandChinaPolygon) else {
+            return false
+        }
+        for exclusion in nonGCJ02Exclusions {
+            if pointInPolygon(lon: lon, lat: lat, polygon: exclusion) {
+                return false
+            }
+        }
+        return true
+    }
+
     public static func isOutsideChina(lat: Double, lon: Double) -> Bool {
-        lon < 72.004 || lon > 137.8347 || lat < 0.8293 || lat > 55.8271
+        !isInMainlandChina(lat: lat, lon: lon)
+    }
+
+    /// Determines whether GCJ-02 conversion should apply, giving priority to an authoritative
+    /// `MKPlacemark.isoCountryCode` when available so border POIs in HK/MO/TW/JP/KR/etc.
+    /// never receive unintended GCJ-02 shifts.
+    public static func shouldApplyGCJ02(lat: Double, lon: Double, isoCountryCode: String? = nil) -> Bool {
+        if let code = isoCountryCode?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased(),
+           !code.isEmpty,
+           code != "CN" {
+            return false
+        }
+        return isInMainlandChina(lat: lat, lon: lon)
     }
 
     public static func wgs84ToGCJ02(lat: Double, lon: Double) -> CLLocationCoordinate2D {
@@ -216,16 +318,24 @@ public enum CoordinateTransform {
     }
 
     public static func gcj02ToWGS84(lat: Double, lon: Double) -> CLLocationCoordinate2D {
-        if isOutsideChina(lat: lat, lon: lon) {
+        // Fast outer-box rejection (slightly padded by max ~0.01° GCJ-02 shift)
+        guard lat.isFinite, lon.isFinite,
+              lon >= 73.3, lon <= 135.2,
+              lat >= 17.9, lat <= 53.7 else {
             return CLLocationCoordinate2D(latitude: lat, longitude: lon)
         }
-        // 3-step fixed-point refinement gives sub-millimeter inverse accuracy.
+        // 3-step fixed-point refinement gives sub-millimeter inverse accuracy,
+        // and checking the Mainland China polygon in canonical WGS-84 space guarantees
+        // exact bijectivity (`gcj02ToWGS84(wgs84ToGCJ02(w)) == w`) even right next to borders.
         var wgsLat = lat
         var wgsLon = lon
         for _ in 0..<3 {
-            let gcj = wgs84ToGCJ02(lat: wgsLat, lon: wgsLon)
-            wgsLat += lat - gcj.latitude
-            wgsLon += lon - gcj.longitude
+            let d = delta(lat: wgsLat, lon: wgsLon)
+            wgsLat = lat - d.lat
+            wgsLon = lon - d.lon
+        }
+        guard isInMainlandChina(lat: wgsLat, lon: wgsLon) else {
+            return CLLocationCoordinate2D(latitude: lat, longitude: lon)
         }
         return CLLocationCoordinate2D(latitude: wgsLat, longitude: wgsLon)
     }

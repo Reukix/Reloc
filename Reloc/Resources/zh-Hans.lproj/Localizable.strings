@@ -45,6 +45,10 @@
 "settings.duration.hours" = "%d 小时";
 "settings.gcj02" = "中国大陆地图 GCJ-02 纠偏";
 "settings.micro_jitter" = "自然微漂移（±0.6m GPS 抖动）";
+"settings.dynamic_island.title" = "灵动岛后台提示";
+"settings.dynamic_island.on_hint" = "后台运行时在灵动岛 / 状态栏显示蓝色定位提示";
+"settings.dynamic_island.off_ready" = "已关闭灵动岛提示（静默后台定位运行）";
+"settings.dynamic_island.off_need_always" = "需将定位权限设为「始终」才能彻底隐藏灵动岛提示";
 "settings.background_mode.title" = "后台运行方式";
 "settings.background_mode.always" = "原生定位保活已就绪（无音频占用）";
 "settings.background_mode.upgrade_hint" = "建议将定位权限设为「始终」以提升锁屏长时稳定性";
@@ -116,7 +120,7 @@
 "map.live.confirmed.subtitle" = "系统已确认外设来源（isProducedByAccessory = true），可直接切去任意 App";
 "map.live.waiting_sub.detail" = "MFi 鉴权已通过，但系统尚未订阅外设 GPS。点击下方一键刷新（含悬浮 7 秒倒计时）即可唤醒订阅。";
 "map.live.pending_lock.detail" = "NMEA 已连通，但系统仍在沿用本机缓存定位。点击下方一键刷新（含悬浮 7 秒倒计时）即可 100% 强制切换。";
-"map.live.pending_lock.distant_detail" = "目标距真实位置 >15 km，已被系统 Wi-Fi / 基站筛选（CLNmeaScreener）拦截。点击下方一键刷新；跨城或跨国轨迹连续移动建议开启飞行模式（关闭 Wi-Fi 与蜂窝基站定位）。";
+"map.live.pending_lock.distant_detail" = "目标距真实位置 >15 km，已被系统 Wi-Fi / 基站筛选（CLNmeaScreener）拦截。点击下方一键刷新；开启飞行模式时请同时在系统「设置 → 无线局域网」彻底关闭 Wi-Fi（控制中心仅断开仍会扫描），或配合防回弹规则使用。";
 "map.live.refresh_button" = "一键刷新定位服务（浮窗指引）";
 "map.live.connecting" = "正在建立本机外设通道并完成 MFi 鉴权…";
 "map.live.waking_sub" = "鉴权成功，正在自动唤醒系统外设 GPS 订阅…";
@@ -148,6 +152,19 @@
 /* Mode & Trajectory Simulation */
 "mode.fixed" = "定格";
 "mode.route" = "轨迹";
+"route.creation.road" = "贴路规划";
+"route.creation.freehand" = "手绘轨迹";
+"route.freehand.banner" = "单指在地图上绘制轨迹（靠近起点松手自动闭合绕圈）";
+"route.freehand.start_draw" = "开始手绘";
+"route.freehand.redraw" = "重绘";
+"route.freehand.stop_draw" = "退出绘制";
+"route.freehand.drawing_title" = "正在手绘轨迹…";
+"route.freehand.drawing_subtitle" = "单指在地图上描画路径，双指可缩放地图";
+"route.freehand.empty_title" = "手绘自由轨迹";
+"route.freehand.empty_subtitle" = "适合操场绕圈跑步或公园环线，点击「开始手绘」直接描画";
+"route.freehand.ready_title" = "手绘轨迹 · %@";
+"route.freehand.ready_loop_title" = "手绘闭合轨迹 · %@";
+"route.freehand.ready_subtitle" = "%@ · 预计 %@";
 "route.search.placeholder" = "搜索添加起点、途经点或终点";
 "route.preset.walking" = "步行";
 "route.preset.running" = "跑步";
@@ -184,6 +201,33 @@
 "route.save.placeholder" = "输入路线名称";
 "route.save.message" = "将保存当前贴路轨迹、模式与速度设置。";
 
+/* GPX Import & Export */
+"gpx.action.import" = "导入 GPX 轨迹";
+"gpx.action.import_short" = "导入 GPX";
+"gpx.action.export" = "导出 GPX 文件";
+"gpx.action.export_short" = "导出 GPX";
+"gpx.error.unreadable" = "无法读取所选 GPX 文件。";
+"gpx.error.too_large" = "GPX 文件体积超过 20 MB 限制。";
+"gpx.error.invalid_xml" = "GPX 文件格式无效：%@";
+"gpx.error.no_coordinates" = "该 GPX 文件中未找到有效坐标点。";
+"gpx.error.stop_session_first" = "请先停止当前轨迹模拟，再导入新的 GPX 文件。";
+
+/* Backup & Migration (JSON) */
+"settings.section.backup" = "数据备份与迁移";
+"settings.backup.footer" = "可将全部收藏地点与常用路线导出为 JSON 备份，便于换机恢复、备份或分享；导入时自动去重合并，不会覆盖现有数据，也支持直接导入 GPX 轨迹文件。";
+"backup.action.export" = "导出收藏与路线（JSON 备份）";
+"backup.action.import" = "导入备份（JSON）";
+"backup.action.import_any" = "导入备份或 GPX 文件";
+"backup.export.summary" = "%d 个收藏 · %d 条路线";
+"backup.import.subtitle" = "支持 Reloc JSON 备份与标准 GPX 轨迹";
+"backup.import.success" = "导入完成：新增 %d 个收藏地点、%d 条路线。";
+"backup.import.success_with_updates" = "导入完成：新增 %d 个收藏地点、%d 条路线（更新 %d 项）。";
+"backup.error.unreadable" = "无法读取所选备份文件。";
+"backup.error.too_large" = "备份文件体积超过 20 MB 限制。";
+"backup.error.invalid_format" = "备份 JSON 格式无效：%@";
+"backup.error.empty" = "该备份文件中未包含有效的收藏或路线数据。";
+"backup.error.nothing_to_export" = "当前暂无可导出的收藏地点或常用路线。";
+
 /* Starter Favorites */
 "favorite.tokyo_station.name" = "东京站";
 "favorite.tokyo_station.subtitle" = "日本东京都千代田区";
@@ -192,12 +236,16 @@
 
 /* Manual Coordinate Sheet */
 "manual.title" = "手动输入坐标";
-"manual.section.header" = "WGS-84 坐标与海拔";
+"manual.section.header" = "坐标与海拔";
+"manual.datum.label" = "坐标系";
+"manual.datum.wgs84" = "WGS-84（全球 GPS）";
+"manual.datum.gcj02" = "GCJ-02（高德/腾讯）";
 "manual.lat.placeholder" = "纬度 (-90 ~ 90)";
 "manual.lon.placeholder" = "经度 (-180 ~ 180)";
 "manual.alt.placeholder" = "海拔 (米，留空自动获取地形海拔)";
 "manual.footer.invalid" = "请输入合法的纬度（-90 ~ 90）、经度（-180 ~ 180）及海拔（-500 ~ 50000 米）。";
-"manual.footer.hint" = "留空海拔将自动根据坐标查询真实地形海拔；填入数值则会固定使用该海拔。";
+"manual.footer.hint" = "全球标准 WGS-84 坐标；留空海拔将自动查询真实地形海拔，填入数值则会固定使用该海拔。";
+"manual.footer.gcj02_hint" = "将自动把中国大陆 GCJ-02（高德/腾讯/苹果国内地图）坐标无损反算为标准 WGS-84；境外与港澳台坐标保持原值不偏移。";
 "manual.favorite.header" = "保存到收藏（可选）";
 "manual.favorite.placeholder" = "地点名称";
 
@@ -227,6 +275,8 @@
 "pip.preparing.subtitle" = "请按浮窗指引关闭再开启定位服务";
 "pip.step1.headline" = "① 关闭系统「定位服务」";
 "pip.step1.subtitle" = "关闭后将自动开始 7 秒倒计时，无需手动计时";
+"pip.step1.subtitle_seconds" = "关闭后将自动开始 %d 秒倒计时，无需手动计时";
+"pip.step1.distant_subtitle_seconds" = "关闭后自动倒数 %d 秒；远距离请确认设置内 Wi-Fi 已彻底关闭";
 "pip.step1.restore.subtitle" = "清空外设残留缓存，关闭后自动开始 7 秒倒计时";
 "pip.step2.headline" = "② 正在清空系统定位缓存";
 "pip.step2.restore.headline" = "② 正在清空外设残留缓存";
@@ -238,6 +288,8 @@
 "pip.step3.reopened.subtitle" = "正在极速锁定外设 GPS，请稍候 1–2 秒…";
 "pip.step3.subscribed.headline" = "③ 系统已重新订阅外设 GPS";
 "pip.step3.subscribed.subtitle" = "正在极速锁定目标坐标，请稍候 1–2 秒…";
+"pip.step3.retry_longer.headline" = "仍未锁定 · 请再关闭一次";
+"pip.step3.retry_longer.subtitle" = "直接再次关闭「定位服务」将倒数 %d 秒，并确认设置中 Wi-Fi 已关闭";
 "pip.step3.restoring.headline" = "③ 正在重新获取本机真实定位…";
 "pip.step3.restoring.subtitle" = "已重新打开定位服务，请稍候 1–2 秒";
 "pip.countdown.seconds" = "%d 秒";
@@ -275,3 +327,103 @@
 "intent.stop.desc" = "断开虚拟外设定位，拉起 7 秒恢复倒计时浮窗并直接跳转系统「定位服务」页清除残留缓存恢复真实 GPS。";
 "intent.stop.short" = "关闭定位";
 "Stop virtual location and refresh cache" = "关闭虚拟定位并刷新恢复";
+
+/* 虚拟摇杆 */
+"mode.joystick" = "摇杆";
+"joystick.button.start" = "开始摇杆漫游";
+"joystick.cruise.lock" = "锁定巡航";
+"joystick.cruise.locked" = "巡航中";
+"joystick.cruise.unlock" = "解除巡航";
+"joystick.idle.title" = "摇杆 · %@";
+"joystick.idle.subtitle" = "点击地图设定起点，启动后可 360° 推杆自由移动";
+"joystick.speed.label" = "摇杆速度";
+"joystick.status.waiting_lock" = "等待锁定起点后可推杆移动…";
+"joystick.status.cruising" = "摇杆巡航中（已锁定航向）";
+"joystick.status.moving" = "摇杆移动中";
+"joystick.status.ready" = "摇杆已就绪 · 拖动左侧摇杆移动";
+
+/* 轨迹目标里程 / 圈数 / 拟真停顿 / 中段起跑 */
+"route.goal.none" = "不限";
+"route.goal.distance" = "目标里程";
+"route.goal.laps" = "目标圈数";
+"route.goal.title" = "自动停止目标与停顿";
+"route.goal.mode.label" = "停止条件";
+"route.goal.section.header" = "自动停止条件";
+"route.goal.section.footer" = "达到目标累计里程或目标圈数后，自动在当前位置定格停止。";
+"route.goal.chip.none" = "目标：不限";
+"route.goal.chip.distance" = "目标 %.1f km";
+"route.goal.chip.laps" = "目标 %d 圈";
+"route.goal.distance.header" = "目标累计里程";
+"route.goal.distance.value" = "满 %.1f km 自动停止";
+"route.goal.laps.header" = "目标总圈数";
+"route.goal.laps.value" = "满 %d 圈自动停止";
+"route.goal.laps.short" = "%d 圈";
+"route.goal.laps.once_hint" = "请将循环模式切为「折返往返」或「闭合循环」以启用多圈目标。";
+"route.brief_stops.short" = "拟真停顿";
+"route.brief_stops.title" = "模拟红绿灯 / 短暂停顿";
+"route.brief_stops.subtitle" = "行进中随机短暂停留 4–15 秒，模拟等红绿灯或饮水";
+"route.start_progress.label" = "起跑位置";
+"route.status.brief_stop" = "拟真停顿中（红绿灯 / 停留）…";
+"route.status.moving_lap_goal" = "轨迹模拟中 · 第 %d/%d 圈";
+
+/* 远距离预警与防回弹代理规则 */
+"map.distant.warning" = "距当前真实位置 %@（>15 km），建议使用更长刷新倒计时或防回弹规则";
+"map.distant.rules_button" = "防回弹规则";
+"settings.refresh_countdown.title" = "刷新浮窗倒计时";
+"settings.refresh_countdown.auto" = "自动 (7s / 18s)";
+"settings.refresh_countdown.seconds" = "%d 秒";
+"route.action.reverse" = "反向路线";
+"settings.proxy_rules.title" = "远距离防回弹代理规则";
+"settings.proxy_rules.subtitle" = "Surge / 小火箭 / Loon 安全规则（不破坏地图）";
+"settings.shortcuts.route_summary" = "选择已收藏路线并直接启动轨迹模拟";
+"settings.shortcuts.coord_summary" = "支持直接传入任意经纬度（WGS-84 或 GCJ-02）联动自动化";
+
+"proxy_rules.title" = "防回弹代理规则";
+"proxy_rules.intro.title" = "稳定锁定远距离坐标（>15 km）";
+"proxy_rules.intro.body" = "仅屏蔽苹果 gs-loc Wi-Fi/基站辅助校验域名，可在不开启飞行模式的情况下大幅降低远距离回弹概率。";
+"proxy_rules.format.header" = "规则格式";
+"proxy_rules.format.label" = "代理软件";
+"proxy_rules.copy" = "一键复制规则";
+"proxy_rules.copied" = "已复制到剪贴板";
+"proxy_rules.export_file" = "导出模块 / 插件文件";
+"proxy_rules.warning.footer" = "仅屏蔽 gs-loc.apple.com 与 gs-loc-cn.apple.com。请勿整段屏蔽 ls.apple.com，否则会导致 Apple 地图底图、地点搜索与道路规划失效。";
+
+/* 收藏搜索、分组与完整编辑 */
+"places.search.placeholder" = "搜索收藏、分组或路线";
+"places.search.empty" = "未找到匹配项";
+"places.group.all" = "全部";
+"places.group.ungrouped" = "未分组";
+"places.action.edit" = "编辑";
+"places.edit.title" = "编辑收藏地点";
+"places.edit.section.basic" = "基本信息与分组";
+"places.edit.group.placeholder" = "分组标签（可选，如 打卡 / 跑步 / 游戏）";
+"places.edit.note.placeholder" = "备注（可选）";
+"places.edit.address.placeholder" = "地址 / 副标题";
+"places.action.copy_coords" = "复制坐标";
+"places.action.locate" = "选择此位置";
+"places.action.add_waypoint" = "设为途经点";
+"places.action.load_route" = "加载此路线";
+"places.action.add_favorite" = "加入收藏";
+"places.saved_badge" = "已收藏";
+"places.active_badge" = "当前";
+"places.gpx.import_subtitle" = "支持标准 GPX 1.0 / 1.1 轨迹与航点";
+
+/* 扩展快捷指令 */
+"intent.error.invalid_coordinate" = "坐标无效：纬度需在 -90~90，经度需在 -180~180 之间。";
+"intent.error.route_not_found" = "未找到对应的收藏路线，请先在 Reloc 中保存路线。";
+"intent.entity.route" = "收藏路线";
+"intent.param.route" = "收藏路线";
+"intent.param.show_refresh_guide" = "显示画中画刷新浮窗";
+"intent.param.latitude" = "纬度";
+"intent.param.longitude" = "经度";
+"intent.param.altitude" = "海拔（米）";
+"intent.param.place_name" = "地点名称";
+"intent.param.is_gcj02" = "输入为 GCJ-02（高德/腾讯坐标）";
+"intent.prompt.choose_route" = "请选择要模拟的收藏路线";
+"intent.start_route.title" = "开始收藏路线";
+"intent.start_route.desc" = "直接加载并启动一条已收藏的轨迹路线，可选弹出刷新浮窗并跳转系统定位服务页。";
+"intent.start_route.short" = "开始轨迹";
+"Start route ${route}" = "启动路线 ${route}";
+"intent.start_coord.title" = "指定坐标定位";
+"intent.start_coord.desc" = "按自定义经纬度（支持 WGS-84 与 GCJ-02）启动虚拟外设定位，适合自动化与 NFC 联动。";
+"Locate at (${latitude}, ${longitude})" = "定位到坐标 (${latitude}, ${longitude})";

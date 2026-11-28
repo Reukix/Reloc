@@ -14,10 +14,14 @@ final class LocationRefreshPresenter: NSObject, ObservableObject {
     @Published private(set) var isActive = false
     @Published private(set) var isPossible = false
 
+    /// Called when the PiP guide closes, fails to start, or tears down so view-model refresh flags never stick.
+    var onGuideClosed: (() -> Void)?
+
     private var hostView: SampleBufferHostView?
     private var pipController: AVPictureInPictureController?
     private var possibleObserver: NSKeyValueObservation?
     private var dismissTimer: Timer?
+    private var heartbeatTimer: Timer?
 
     private var stepIndex: Int = 1
     private var headline: String = L10n.tr("pip.preparing.headline")
@@ -38,13 +42,17 @@ final class LocationRefreshPresenter: NSObject, ObservableObject {
         super.init()
     }
 
-    func startLocationRefreshGuide() {
+    func startLocationRefreshGuide(countdownSeconds: Int = 7, isDistant: Bool = false) {
         dismissTimer?.invalidate()
         dismissTimer = nil
+        stopHeartbeat()
 
+        let clampedSecs = max(5, min(30, countdownSeconds))
         self.stepIndex = 1
         self.headline = L10n.tr("pip.step1.headline")
-        self.subtitle = L10n.tr("pip.step1.subtitle")
+        self.subtitle = isDistant
+            ? L10n.format("pip.step1.distant_subtitle_seconds", clampedSecs)
+            : L10n.format("pip.step1.subtitle_seconds", clampedSecs)
         self.countdownSeconds = nil
         self.outcome = .inProgress
         self.wantsAutoStart = true
@@ -58,10 +66,30 @@ final class LocationRefreshPresenter: NSObject, ObservableObject {
         configureAudioSession()
         ensureControllerAttached()
         enqueueCurrentFrame()
+        startHeartbeat()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             self?.tryStartPiPIfDesired()
         }
+    }
+
+    private func startHeartbeat() {
+        stopHeartbeat()
+        // Periodic lightweight frame refresh keeps the PiP sample-buffer pipeline alive across
+        // longer 18–30s distant cache flushes and Step 3 lock waits.
+        let timer = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.outcome == .inProgress, self.hostView != nil else { return }
+                self.enqueueCurrentFrame()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        heartbeatTimer = timer
+    }
+
+    private func stopHeartbeat() {
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
     }
 
     func updateLocationRefresh(step: Int, headline: String, subtitle: String, countdown: Int? = nil) {
@@ -81,6 +109,7 @@ final class LocationRefreshPresenter: NSObject, ObservableObject {
     }
 
     func finishLocationRefresh(succeeded: Bool, message: String, headline: String? = nil) {
+        stopHeartbeat()
         self.outcome = succeeded ? .succeeded : .failed
         self.stepIndex = succeeded ? 3 : self.stepIndex
         self.headline = headline ?? (succeeded ? L10n.tr("pip.finish.succeeded.headline") : L10n.tr("pip.finish.cancelled.headline"))
@@ -123,6 +152,7 @@ final class LocationRefreshPresenter: NSObject, ObservableObject {
     func teardown() {
         dismissTimer?.invalidate()
         dismissTimer = nil
+        stopHeartbeat()
         wantsAutoStart = false
 
         if let pip = pipController, pip.isPictureInPictureActive {
@@ -464,7 +494,9 @@ extension LocationRefreshPresenter: AVPictureInPictureControllerDelegate {
         Task { @MainActor in
             self.isActive = false
             self.wantsAutoStart = false
+            self.stopHeartbeat()
             self.deactivateAudioSession()
+            self.onGuideClosed?()
         }
     }
 
@@ -472,7 +504,9 @@ extension LocationRefreshPresenter: AVPictureInPictureControllerDelegate {
         Task { @MainActor in
             self.isActive = false
             self.wantsAutoStart = false
+            self.stopHeartbeat()
             self.deactivateAudioSession()
+            self.onGuideClosed?()
         }
     }
 }

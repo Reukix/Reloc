@@ -1,0 +1,2 @@
+"NSLocationWhenInUseUsageDescription" = "位置情報の注入中にRelocをバックグラウンドで動作させ、システムの位置情報サービスによる購読を開始するために使用します。";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "位置情報の注入中にRelocをバックグラウンドで継続動作させ、システムによる一時停止で仮想位置情報が途切れるのを防ぐために使用します。";

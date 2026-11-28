@@ -5,6 +5,9 @@ options:
   knownRegions:
     - en
     - zh-Hans
+    - zh-Hant
+    - ja
+    - ko
   deploymentTarget:
     iOS: "16.0"
   xcodeVersion: "15.0"
@@ -37,8 +40,8 @@ targets:
       path: Reloc/Info.plist
       properties:
         CFBundleDisplayName: Reloc
-        CFBundleShortVersionString: "1.0.5"
-        CFBundleVersion: "6"
+        CFBundleShortVersionString: "1.0.6"
+        CFBundleVersion: "7"
         LSRequiresIPhoneOS: true
         LSSupportsOpeningDocumentsInPlace: true
         UIFileSharingEnabled: true
@@ -63,6 +66,22 @@ targets:
           - CFBundleURLName: dev.reloc.ios
             CFBundleURLSchemes:
               - reloc
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: GPX Route
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.topografix.gpx
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.topografix.gpx
+            UTTypeDescription: GPS Exchange Format (GPX)
+            UTTypeConformsTo:
+              - public.xml
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - gpx
+              public.mime-type:
+                - application/gpx+xml
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.reloc.ios

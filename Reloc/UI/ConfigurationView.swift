@@ -1,10 +1,14 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct ConfigurationView: View {
     @ObservedObject var viewModel: RelocViewModel
     @Environment(\.openURL) private var openURL
     @State private var copiedPrefsURL = false
+    @State private var showDataImporter = false
+    @State private var showProxyRulesSheet = false
+    @State private var sharedFileItem: SharedFileItem?
 
     var body: some View {
         NavigationStack {
@@ -53,6 +57,65 @@ struct ConfigurationView: View {
                         }
                     }
 
+                    Toggle(isOn: $viewModel.backgroundLocationIndicatorEnabled) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(L10n.tr("settings.dynamic_island.title"))
+                                Text(
+                                    viewModel.backgroundLocationIndicatorEnabled
+                                        ? L10n.tr("settings.dynamic_island.on_hint")
+                                        : (viewModel.isAlwaysLocationAuthorized
+                                            ? L10n.tr("settings.dynamic_island.off_ready")
+                                            : L10n.tr("settings.dynamic_island.off_need_always"))
+                                )
+                                .font(.caption)
+                                .foregroundStyle(
+                                    !viewModel.backgroundLocationIndicatorEnabled && !viewModel.isAlwaysLocationAuthorized
+                                        ? RelocTheme.amber
+                                        : .secondary
+                                )
+                            }
+                        } icon: {
+                            SettingsIconBadge(systemName: "platter.filled.top.iphone", color: .cyan)
+                        }
+                    }
+
+                    Picker(selection: $viewModel.refreshCountdownPreset) {
+                        ForEach(RefreshCountdownPreset.allCases) { preset in
+                            Text(preset.title).tag(preset)
+                        }
+                    } label: {
+                        Label {
+                            Text(L10n.tr("settings.refresh_countdown.title"))
+                        } icon: {
+                            SettingsIconBadge(systemName: "clock.arrow.circlepath", color: .orange)
+                        }
+                    }
+
+                    Button {
+                        RelocTheme.hapticLight()
+                        showProxyRulesSheet = true
+                    } label: {
+                        HStack {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(L10n.tr("settings.proxy_rules.title"))
+                                        .foregroundStyle(.primary)
+                                    Text(L10n.tr("settings.proxy_rules.subtitle"))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                SettingsIconBadge(systemName: "shield.lefthalf.filled", color: RelocTheme.emerald)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .tint(.primary)
+
                     HStack(spacing: 10) {
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
@@ -98,6 +161,30 @@ struct ConfigurationView: View {
                         }
                     } icon: {
                         SettingsIconBadge(systemName: "location.north.circle.fill", color: RelocTheme.accent)
+                    }
+
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L10n.tr("intent.start_route.title"))
+                                .font(.subheadline.weight(.semibold))
+                            Text(L10n.tr("settings.shortcuts.route_summary"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        SettingsIconBadge(systemName: "point.filled.topleft.down.curvedto.point.bottomright.up", color: RelocTheme.emerald)
+                    }
+
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L10n.tr("intent.start_coord.title"))
+                                .font(.subheadline.weight(.semibold))
+                            Text(L10n.tr("settings.shortcuts.coord_summary"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        SettingsIconBadge(systemName: "number.circle.fill", color: .teal)
                     }
 
                     Label {
@@ -224,9 +311,85 @@ struct ConfigurationView: View {
                 } footer: {
                     Text(L10n.tr("settings.appearance.footer"))
                 }
+                Section {
+                    Button {
+                        RelocTheme.hapticLight()
+                        if let url = viewModel.exportBackupArchive() {
+                            sharedFileItem = SharedFileItem(url: url)
+                        }
+                    } label: {
+                        HStack {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(L10n.tr("backup.action.export"))
+                                        .foregroundStyle(.primary)
+                                    Text(L10n.format("backup.export.summary", viewModel.favorites.count, viewModel.savedRoutes.count))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                SettingsIconBadge(systemName: "square.and.arrow.up", color: RelocTheme.accent)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .tint(.primary)
+
+                    Button {
+                        RelocTheme.hapticLight()
+                        showDataImporter = true
+                    } label: {
+                        HStack {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(L10n.tr("backup.action.import_any"))
+                                        .foregroundStyle(.primary)
+                                    Text(L10n.tr("backup.import.subtitle"))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                SettingsIconBadge(systemName: "square.and.arrow.down", color: RelocTheme.emerald)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .tint(.primary)
+                } header: {
+                    Text(L10n.tr("settings.section.backup"))
+                } footer: {
+                    Text(L10n.tr("settings.backup.footer"))
+                }
             }
             .navigationTitle(L10n.tr("settings.title"))
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $sharedFileItem) { item in
+                ActivityShareSheet(url: item.url)
+            }
+            .sheet(isPresented: $showProxyRulesSheet) {
+                AntiSnapbackRulesSheet()
+            }
+            .fileImporter(
+                isPresented: $showDataImporter,
+                allowedContentTypes: [.json, .relocGPX, .xml],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    if viewModel.importDataFile(from: url) {
+                        RelocTheme.hapticSuccess()
+                    }
+                case .failure(let error):
+                    viewModel.alertMessage = error.localizedDescription
+                }
+            }
         }
     }
 }

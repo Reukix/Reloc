@@ -13,15 +13,23 @@ struct WebMercatorMapView: UIViewRepresentable {
     var routePolyline: [CLLocationCoordinate2D] = []
     var routeWaypoints: [CLLocationCoordinate2D] = []
     var showActivePin: Bool = true
+    var isFreehandDrawing: Bool = false
+    var canDragRouteWaypoints: Bool = false
     let mapSource: MapSource
     @Binding var cameraTarget: CLLocationCoordinate2D?
     let onTapCoordinate: (CLLocationCoordinate2D) -> Void
     var onRegionChange: ((MKCoordinateRegion) -> Void)? = nil
+    var onFinishFreehandStroke: (([CLLocationCoordinate2D]) -> Void)? = nil
+    var onMoveRouteWaypoint: ((Int, CLLocationCoordinate2D) -> Void)? = nil
 
     func makeUIView(context: Context) -> WebMercatorCanvasView {
         let view = WebMercatorCanvasView(frame: .zero)
         view.onTapCoordinate = onTapCoordinate
         view.onRegionChange = onRegionChange
+        view.onFinishFreehandStroke = onFinishFreehandStroke
+        view.onMoveRouteWaypoint = onMoveRouteWaypoint
+        view.isFreehandDrawing = isFreehandDrawing
+        view.canDragRouteWaypoints = canDragRouteWaypoints
         view.mapSource = mapSource
         view.setCenter(activeCoordinate, zoom: 15.0, animated: false)
         view.updatePins(active: activeCoordinate, isRunning: isSessionRunning, pending: pendingCoordinate, showActive: showActivePin)
@@ -32,6 +40,14 @@ struct WebMercatorMapView: UIViewRepresentable {
     func updateUIView(_ uiView: WebMercatorCanvasView, context: Context) {
         uiView.onTapCoordinate = onTapCoordinate
         uiView.onRegionChange = onRegionChange
+        uiView.onFinishFreehandStroke = onFinishFreehandStroke
+        uiView.onMoveRouteWaypoint = onMoveRouteWaypoint
+        if uiView.isFreehandDrawing != isFreehandDrawing {
+            uiView.isFreehandDrawing = isFreehandDrawing
+        }
+        if uiView.canDragRouteWaypoints != canDragRouteWaypoints {
+            uiView.canDragRouteWaypoints = canDragRouteWaypoints
+        }
         if uiView.mapSource != mapSource {
             uiView.mapSource = mapSource
         }
@@ -88,6 +104,23 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
 
     var onTapCoordinate: ((CLLocationCoordinate2D) -> Void)?
     var onRegionChange: ((MKCoordinateRegion) -> Void)?
+    var onFinishFreehandStroke: (([CLLocationCoordinate2D]) -> Void)?
+    var onMoveRouteWaypoint: ((Int, CLLocationCoordinate2D) -> Void)?
+    var isFreehandDrawing: Bool = false {
+        didSet {
+            if oldValue != isFreehandDrawing {
+                updateGestureModeForFreehand()
+            }
+        }
+    }
+    var canDragRouteWaypoints: Bool = false {
+        didSet {
+            if oldValue != canDragRouteWaypoints {
+                updateWaypointDragInteraction()
+            }
+        }
+    }
+    private var draggingWaypointIndex: Int?
     private var hasReportedInitialRegion = false
     var mapSource: MapSource = .globalStreet {
         didSet {
@@ -107,7 +140,8 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
     private let routeContainer = UIView()
     private let routeCasingLayer = CAShapeLayer()
     private let routeStrokeLayer = CAShapeLayer()
-    private let pinContainer = UIView()
+    private let pinContainer = PassthroughPinContainerView()
+    private let freehandOverlay = FreehandDrawingOverlayView()
     private let activePin = MapPinView(kind: .active)
     private let pendingPin = MapPinView(kind: .pending)
     private var routeWaypointViews: [RouteBadgeView] = []
@@ -115,6 +149,10 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
     private var routeWaypointNorms: [CGPoint] = []
     private var lastPolylineSignature = ""
     private var lastWaypointsSignature = ""
+
+    private var panGesture: UIPanGestureRecognizer?
+    private var doubleTapGesture: UITapGestureRecognizer?
+    private var singleTapGesture: UITapGestureRecognizer?
 
     private var activeCoord = CLLocationCoordinate2D(latitude: 37.334606, longitude: -122.009102)
     private var pendingCoord: CLLocationCoordinate2D?
@@ -207,9 +245,25 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
         pendingPin.isHidden = true
         pinContainer.addSubview(pendingPin)
 
+        freehandOverlay.convertPointToCoordinate = { [weak self] pt in
+            guard let self else { return kCLLocationCoordinate2DInvalid }
+            return WebMercatorProjection.toCoordinate(self.normalized(forScreenPoint: pt))
+        }
+        freehandOverlay.onFinishStroke = { [weak self] coords in
+            self?.onFinishFreehandStroke?(coords)
+        }
+        freehandOverlay.onTwoFingerPan = { [weak self] gesture in
+            self?.handlePan(gesture)
+        }
+        freehandOverlay.onTwoFingerPinch = { [weak self] gesture in
+            self?.handlePinch(gesture)
+        }
+        addSubview(freehandOverlay)
+
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         pan.delegate = self
         addGestureRecognizer(pan)
+        self.panGesture = pan
 
         let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
         pinch.delegate = self
@@ -218,11 +272,13 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
         doubleTap.numberOfTapsRequired = 2
         addGestureRecognizer(doubleTap)
+        self.doubleTapGesture = doubleTap
 
         let singleTap = UITapGestureRecognizer(target: self, action: #selector(handleSingleTap(_:)))
         singleTap.numberOfTapsRequired = 1
         singleTap.require(toFail: doubleTap)
         addGestureRecognizer(singleTap)
+        self.singleTapGesture = singleTap
     }
 
     override func layoutSubviews() {
@@ -232,6 +288,7 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
         routeCasingLayer.frame = bounds
         routeStrokeLayer.frame = bounds
         pinContainer.frame = bounds
+        freehandOverlay.frame = bounds
         renderScene()
         if !hasReportedInitialRegion, bounds.width > 1, bounds.height > 1 {
             hasReportedInitialRegion = true
@@ -312,7 +369,8 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
 
         let polySig: String
         if let first = polyline.first, let last = polyline.last {
-            polySig = "\(polyline.count):\(String(format: "%.5f,%.5f", first.latitude, first.longitude)):\(String(format: "%.5f,%.5f", last.latitude, last.longitude))"
+            let mid = polyline[polyline.count / 2]
+            polySig = "\(polyline.count):\(String(format: "%.5f,%.5f", first.latitude, first.longitude)):\(String(format: "%.5f,%.5f", mid.latitude, mid.longitude)):\(String(format: "%.5f,%.5f", last.latitude, last.longitude))"
         } else {
             polySig = ""
         }
@@ -339,11 +397,62 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
                     role = .via(idx)
                 }
                 let badge = RouteBadgeView(role: role)
+                badge.tag = idx
+                let drag = UILongPressGestureRecognizer(target: self, action: #selector(handleWaypointLongPress(_:)))
+                drag.minimumPressDuration = 0.22
+                drag.allowableMovement = 20
+                badge.addGestureRecognizer(drag)
+                badge.isUserInteractionEnabled = canDragRouteWaypoints
                 pinContainer.insertSubview(badge, belowSubview: activePin)
                 routeWaypointViews.append(badge)
             }
+            updateWaypointDragInteraction()
         }
         layoutPins()
+    }
+
+    private func updateWaypointDragInteraction() {
+        pinContainer.isUserInteractionEnabled = canDragRouteWaypoints
+        for badge in routeWaypointViews {
+            badge.isUserInteractionEnabled = canDragRouteWaypoints
+        }
+    }
+
+    @objc private func handleWaypointLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard canDragRouteWaypoints, let badge = gesture.view else { return }
+        let idx = badge.tag
+        guard routeWaypointNorms.indices.contains(idx) else { return }
+        let pt = gesture.location(in: self)
+        switch gesture.state {
+        case .began:
+            stopDisplayLink()
+            draggingWaypointIndex = idx
+            RelocTheme.hapticMedium()
+            UIView.animate(withDuration: 0.14) {
+                badge.transform = CGAffineTransform(scaleX: 1.25, y: 1.25)
+            }
+            badge.center = pt
+        case .changed:
+            badge.center = pt
+            routeWaypointNorms[idx] = normalized(forScreenPoint: pt)
+        case .ended:
+            draggingWaypointIndex = nil
+            let norm = normalized(forScreenPoint: pt)
+            routeWaypointNorms[idx] = norm
+            UIView.animate(withDuration: 0.14) {
+                badge.transform = .identity
+            }
+            let coord = WebMercatorProjection.toCoordinate(norm)
+            onMoveRouteWaypoint?(idx, coord)
+        case .cancelled, .failed:
+            draggingWaypointIndex = nil
+            UIView.animate(withDuration: 0.14) {
+                badge.transform = .identity
+            }
+            layoutPins()
+        default:
+            break
+        }
     }
 
     // MARK: - Gestures
@@ -352,8 +461,8 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-        (gestureRecognizer is UIPanGestureRecognizer && otherGestureRecognizer is UIPinchGestureRecognizer)
-            || (gestureRecognizer is UIPinchGestureRecognizer && otherGestureRecognizer is UIPanGestureRecognizer)
+        (gestureRecognizer === panGesture && otherGestureRecognizer is UIPinchGestureRecognizer)
+            || (gestureRecognizer is UIPinchGestureRecognizer && otherGestureRecognizer === panGesture)
     }
 
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
@@ -414,6 +523,15 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
         let pt = gesture.location(in: self)
         let coord = WebMercatorProjection.toCoordinate(normalized(forScreenPoint: pt))
         setCenter(coord, zoom: min(maxZoom, currentZoom + 1.25), animated: true)
+    }
+
+    private func updateGestureModeForFreehand() {
+        // Isolate single-finger touches exclusively inside `freehandOverlay` while preserving
+        // 2-finger pan + pinch zoom forwarded from `freehandOverlay`.
+        freehandOverlay.isDrawingEnabled = isFreehandDrawing
+        panGesture?.isEnabled = !isFreehandDrawing
+        doubleTapGesture?.isEnabled = !isFreehandDrawing
+        singleTapGesture?.isEnabled = !isFreehandDrawing
     }
 
     @objc private func handleSingleTap(_ gesture: UITapGestureRecognizer) {
@@ -516,7 +634,6 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
         let worldPixels = 256.0 * pow(2.0, currentZoom)
         let tileZ = max(2, min(19, Int(ceil(currentZoom))))
         let n = 1 << tileZ
-        let tileDrawSize = worldPixels / Double(n)
 
         let halfW = Double(bounds.width) / 2.0 / worldPixels
         let halfH = Double(bounds.height) / 2.0 / worldPixels
@@ -531,6 +648,8 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
 
+        let pixelScale = max(1.0, Double(window?.screen.scale ?? UIScreen.main.scale))
+
         for ty in minTileY...maxTileY {
             for rawTx in minTileX...maxTileX {
                 let wrappedX = ((rawTx % n) + n) % n
@@ -539,14 +658,23 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
 
                 let tileNormX = Double(rawTx) / Double(n)
                 let tileNormY = Double(ty) / Double(n)
+                let nextNormX = Double(rawTx + 1) / Double(n)
+                let nextNormY = Double(ty + 1) / Double(n)
                 let screenX = Double(bounds.midX) + (tileNormX - centerNorm.x) * worldPixels
                 let screenY = Double(bounds.midY) + (tileNormY - centerNorm.y) * worldPixels
-                // Tiny 0.5pt overlap prevents hairline seams at fractional zoom scales
+                let nextScreenX = Double(bounds.midX) + (nextNormX - centerNorm.x) * worldPixels
+                let nextScreenY = Double(bounds.midY) + (nextNormY - centerNorm.y) * worldPixels
+                // Snap both tile edges to exact device pixels so tiles meet seamlessly with
+                // sub-pixel (<0.33pt) geometric alignment relative to pins and route polylines.
+                let x0 = floor(screenX * pixelScale) / pixelScale
+                let y0 = floor(screenY * pixelScale) / pixelScale
+                let x1 = ceil(nextScreenX * pixelScale) / pixelScale
+                let y1 = ceil(nextScreenY * pixelScale) / pixelScale
                 let frame = CGRect(
-                    x: floor(screenX),
-                    y: floor(screenY),
-                    width: ceil(tileDrawSize) + 1.0,
-                    height: ceil(tileDrawSize) + 1.0
+                    x: x0,
+                    y: y0,
+                    width: max(1.0, x1 - x0),
+                    height: max(1.0, y1 - y0)
                 )
 
                 if let existing = tileViews[key] {
@@ -600,6 +728,7 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
         }
 
         for (idx, norm) in routeWaypointNorms.enumerated() where idx < routeWaypointViews.count {
+            if idx == draggingWaypointIndex { continue }
             let pt = screenPoint(for: norm)
             routeWaypointViews[idx].center = pt
         }
@@ -692,6 +821,13 @@ final class WebMercatorCanvasView: UIView, UIGestureRecognizerDelegate {
 }
 
 // MARK: - Pin Marker View
+
+private final class PassthroughPinContainerView: UIView {
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = super.hitTest(point, with: event)
+        return hit === self ? nil : hit
+    }
+}
 
 private final class MapPinView: UIView {
     enum Kind { case active, pending }
@@ -801,5 +937,9 @@ private final class RouteBadgeView: UIView {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        bounds.insetBy(dx: -10, dy: -10).contains(point)
     }
 }

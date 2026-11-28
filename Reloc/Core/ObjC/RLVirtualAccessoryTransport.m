@@ -49,9 +49,28 @@ static NSString *RLVirtualLocalized(NSString *key) {
         code = @"en";
     } else if ([pref isEqualToString:@"zh-Hans"]) {
         code = @"zh-Hans";
+    } else if ([pref isEqualToString:@"zh-Hant"]) {
+        code = @"zh-Hant";
+    } else if ([pref isEqualToString:@"ja"]) {
+        code = @"ja";
+    } else if ([pref isEqualToString:@"ko"]) {
+        code = @"ko";
     } else {
         NSString *sys = NSBundle.mainBundle.preferredLocalizations.firstObject ?: NSLocale.preferredLanguages.firstObject ?: @"en";
-        code = [sys.lowercaseString hasPrefix:@"zh"] ? @"zh-Hans" : @"en";
+        NSString *lower = sys.lowercaseString;
+        if ([lower hasPrefix:@"zh"]) {
+            if ([lower containsString:@"hant"] || [lower containsString:@"tw"] || [lower containsString:@"hk"] || [lower containsString:@"mo"]) {
+                code = @"zh-Hant";
+            } else {
+                code = @"zh-Hans";
+            }
+        } else if ([lower hasPrefix:@"ja"]) {
+            code = @"ja";
+        } else if ([lower hasPrefix:@"ko"]) {
+            code = @"ko";
+        } else {
+            code = @"en";
+        }
     }
     NSString *path = [NSBundle.mainBundle pathForResource:code ofType:@"lproj"];
     NSBundle *bundle = path ? [NSBundle bundleWithPath:path] : NSBundle.mainBundle;

@@ -2,6 +2,7 @@ import Combine
 import CoreLocation
 import Foundation
 import MapKit
+import Network
 import SwiftUI
 import UIKit
 
@@ -38,6 +39,12 @@ public final class RelocViewModel: ObservableObject {
             session?.setMicroJitterEnabled(microJitterEnabled)
         }
     }
+    @Published public var backgroundLocationIndicatorEnabled: Bool {
+        didSet {
+            store.backgroundLocationIndicatorEnabled = backgroundLocationIndicatorEnabled
+            keepAlive.setBackgroundIndicatorEnabled(backgroundLocationIndicatorEnabled)
+        }
+    }
     @Published public var appearanceMode: AppAppearanceMode {
         didSet { store.appearanceMode = appearanceMode }
     }
@@ -52,6 +59,9 @@ public final class RelocViewModel: ObservableObject {
     }
     @Published public var mapSource: MapSource {
         didSet { store.mapSource = mapSource }
+    }
+    @Published public var refreshCountdownPreset: RefreshCountdownPreset {
+        didSet { store.refreshCountdownPreset = refreshCountdownPreset }
     }
 
     // MARK: - Target & Selected Location (WGS-84)
@@ -74,12 +84,38 @@ public final class RelocViewModel: ObservableObject {
     @Published public var interruptedSession: InterruptedSessionRecord?
 
     // MARK: - Trajectory / Route Simulation State
-    @Published public var controlMode: LocationControlMode = .fixed
+    @Published public var controlMode: LocationControlMode = .fixed {
+        didSet {
+            if controlMode != .route {
+                isFreehandDrawing = false
+            }
+        }
+    }
+    @Published public var routeCreationMode: RouteCreationMode = .road {
+        didSet {
+            if routeCreationMode == .road {
+                isFreehandDrawing = false
+            } else if routeCreationMode == .freehand && !isRouteSessionActive && plannedRoutePoints.count < 2 {
+                isFreehandDrawing = true
+            }
+        }
+    }
+    @Published public var isFreehandDrawing = false
     @Published public var routeWaypoints: [RouteWaypoint] = []
     @Published public var plannedRoutePoints: [RoutePoint] = []
     @Published public var plannedRouteDistanceMeters: Double = 0
     @Published public var isPlanningRoute = false
     @Published public var routePlanningNotice: String?
+    @Published public var importedRouteTitle: String?
+    @Published public var pendingCameraFocus: CLLocationCoordinate2D?
+    private var freehandBasePoints: [RoutePoint] = []
+    private var previousFreehandBasePoints: [RoutePoint]?
+    public var isCurrentRouteFreehand: Bool {
+        routeCreationMode == .freehand || !freehandBasePoints.isEmpty
+    }
+    public var canUndoFreehandRoute: Bool {
+        !freehandBasePoints.isEmpty || previousFreehandBasePoints != nil
+    }
     @Published public var routePreset: RouteTransportPreset {
         didSet {
             store.routePreset = routePreset
@@ -88,7 +124,7 @@ public final class RelocViewModel: ObservableObject {
                     routeSpeedMps = routePreset.defaultSpeedMps
                 }
                 session?.setTrajectoryPreset(routePreset)
-                if !suppressRouteReplan && !isRouteSessionActive && routeWaypoints.count >= 2 && !oldValue.hasSameRoadTopology(as: routePreset) {
+                if !suppressRouteReplan && !isRouteSessionActive && freehandBasePoints.isEmpty && routeWaypoints.count >= 2 && !oldValue.hasSameRoadTopology(as: routePreset) {
                     replanCurrentRoute()
                 }
             }
@@ -104,8 +140,12 @@ public final class RelocViewModel: ObservableObject {
         didSet {
             store.routeLoopMode = routeLoopMode
             session?.setTrajectoryLoopMode(routeLoopMode)
-            if !suppressRouteReplan && !isRouteSessionActive && routeWaypoints.count >= 3 && (oldValue == .loop || routeLoopMode == .loop) {
-                replanCurrentRoute()
+            if !suppressRouteReplan && !isRouteSessionActive {
+                if !freehandBasePoints.isEmpty {
+                    rebuildFreehandRouteForLoopMode()
+                } else if routeWaypoints.count >= 3 && (oldValue == .loop || routeLoopMode == .loop) {
+                    replanCurrentRoute()
+                }
             }
         }
     }
@@ -115,8 +155,35 @@ public final class RelocViewModel: ObservableObject {
             session?.setTrajectoryRealisticMotion(routeRealisticMotionEnabled)
         }
     }
+    @Published public var routeStopGoalKind: RouteStopGoalKind {
+        didSet { store.routeStopGoalKind = routeStopGoalKind }
+    }
+    @Published public var routeTargetDistanceKm: Double {
+        didSet { store.routeTargetDistanceKm = routeTargetDistanceKm }
+    }
+    @Published public var routeTargetLaps: Int {
+        didSet { store.routeTargetLaps = routeTargetLaps }
+    }
+    @Published public var routeBriefStopsEnabled: Bool {
+        didSet {
+            store.routeBriefStopsEnabled = routeBriefStopsEnabled
+            session?.setTrajectoryBriefStops(routeBriefStopsEnabled)
+        }
+    }
+    @Published public var routeStartProgress: Double = 0.0
     @Published public var trajectoryProgress: TrajectoryProgress?
     @Published public var isRouteSessionActive = false
+
+    // MARK: - Joystick (Free-Roam) Simulation State
+    @Published public var joystickSpeedMps: Double {
+        didSet {
+            store.joystickSpeedMps = joystickSpeedMps
+            session?.setJoystickSpeed(joystickSpeedMps)
+        }
+    }
+    @Published public var joystickCruiseLocked = false
+    @Published public var isJoystickSessionActive = false
+    @Published public var joystickProgress: JoystickProgress?
 
     // MARK: - Altitude Resolution
     @Published public var isResolvingAltitude = false
@@ -138,18 +205,25 @@ public final class RelocViewModel: ObservableObject {
     private var mfiSigner: RLMFiSigner?
     private var session: AccessoryLocationSession?
     private var lastKnownRealLocation: TargetLocation?
+    private var lastPersistedRealLocation: TargetLocation?
+    private let networkPathMonitor = NWPathMonitor()
+    private let networkPathQueue = DispatchQueue(label: "com.reloc.netpath", qos: .utility)
+    private var lastNetworkSatisfied: Bool?
     private var isAppInForeground = true
     private var pendingBackgroundSnapshot: SessionSnapshot?
     private var pendingBackgroundTrajectoryProgress: TrajectoryProgress?
+    private var pendingBackgroundJoystickProgress: JoystickProgress?
     private var routePlanningTask: Task<Void, Never>?
     private var routePlanningGeneration: Int = 0
     private var suppressRouteReplan = false
     private var subscriptionPulseTask: Task<Void, Never>?
     private var lockWatchdogTask: Task<Void, Never>?
+    private var postRefreshRecoveryTask: Task<Void, Never>?
     private var unexpectedStopRecoveryTask: Task<Void, Never>?
     private var refreshCountdownTask: Task<Void, Never>?
     private var locationStopDebounceTask: Task<Void, Never>?
     private var locationRefreshSawDisabled = false
+    private var locationRefreshRetryCount = 0
     private var consecutiveLockLossCount = 0
     private var lastAccessoryVerticalAccuracy: Double?
     private var consecutiveVertAccIncreases = 0
@@ -169,6 +243,38 @@ public final class RelocViewModel: ObservableObject {
         locationAuthorizationStatus == .authorizedAlways
     }
 
+    /// Distance in meters between the device's last known real location and the inspected/active target.
+    public var distanceFromRealLocationMeters: Double? {
+        let real: TargetLocation?
+        if let cached = lastKnownRealLocation {
+            real = cached
+        } else if let latest = coreLocation.latest, latest.isProducedByAccessory == false {
+            real = TargetLocation(latitude: latest.latitude, longitude: latest.longitude, altitude: latest.altitude)
+        } else {
+            real = nil
+        }
+        guard let real else { return nil }
+        let target: TargetLocation
+        if snapshot.isRunning {
+            target = session?.currentComparisonLocation() ?? targetLocation
+        } else if controlMode == .route, let startPt = RouteGeometry.samplePoint(along: plannedRoutePoints, atProgress: routeStartProgress) {
+            target = TargetLocation(latitude: startPt.latitude, longitude: startPt.longitude, altitude: startPt.altitude)
+        } else {
+            target = inspectedLocation
+        }
+        return RouteGeometry.distanceMeters(
+            lat1: real.latitude,
+            lon1: real.longitude,
+            lat2: target.latitude,
+            lon2: target.longitude
+        )
+    }
+
+    /// True when the inspected pre-start target is > 15 km from the device's known real location.
+    public var isInspectedLocationDistant: Bool {
+        (distanceFromRealLocationMeters ?? 0) > 15_000.0
+    }
+
     /// True when the active target is > 15 km from the device's last known real location,
     /// where iOS `CLNmeaScreener` will reject accessory NMEA whenever Wi-Fi/Cell scanning runs.
     public var isDistantFromRealLocation: Bool {
@@ -183,21 +289,41 @@ public final class RelocViewModel: ObservableObject {
         return dist > 15_000.0
     }
 
+    /// Effective PiP refresh countdown seconds (honoring Auto distant escalation or user override).
+    public var effectiveRefreshCountdownSeconds: Int {
+        refreshCountdownPreset.effectiveSeconds(isDistant: isDistantFromRealLocation || isInspectedLocationDistant)
+    }
+
+    public var effectiveRouteTargetDistanceMeters: Double? {
+        routeStopGoalKind == .distance ? max(200.0, routeTargetDistanceKm * 1000.0) : nil
+    }
+
+    public var effectiveRouteTargetLaps: Int? {
+        routeStopGoalKind == .laps && routeLoopMode != .once ? max(1, routeTargetLaps) : nil
+    }
+
     public init() {
         self.intervalSeconds = store.intervalSeconds
         self.durationSeconds = store.durationSeconds
         self.gcj02CorrectionEnabled = store.gcj02CorrectionEnabled
         self.microJitterEnabled = store.microJitterEnabled
+        self.backgroundLocationIndicatorEnabled = store.backgroundLocationIndicatorEnabled
         self.appearanceMode = store.appearanceMode
         self.appLanguage = store.appLanguage
         self.mapStyle = store.mapStyle
         self.mapSource = store.mapSource
+        self.refreshCountdownPreset = store.refreshCountdownPreset
         self.targetLocation = store.lastTargetLocation
         let initialPreset = store.routePreset
         self.routePreset = initialPreset
         self.routeSpeedMps = store.routeSpeedMps
         self.routeLoopMode = store.routeLoopMode
         self.routeRealisticMotionEnabled = store.routeRealisticMotionEnabled
+        self.routeStopGoalKind = store.routeStopGoalKind
+        self.routeTargetDistanceKm = store.routeTargetDistanceKm
+        self.routeTargetLaps = store.routeTargetLaps
+        self.routeBriefStopsEnabled = store.routeBriefStopsEnabled
+        self.joystickSpeedMps = store.joystickSpeedMps
         self.favorites = store.loadFavorites()
         self.recents = store.loadRecents()
         self.savedRoutes = store.loadSavedRoutes()
@@ -207,6 +333,40 @@ public final class RelocViewModel: ObservableObject {
         self.isAppInForeground = UIApplication.shared.applicationState != .background
 
         self.mfiSigner = store.loadBundledMFiSigner()
+        self.lastKnownRealLocation = store.loadCachedRealLocation()
+        self.lastPersistedRealLocation = self.lastKnownRealLocation
+        self.keepAlive.setBackgroundIndicatorEnabled(self.backgroundLocationIndicatorEnabled)
+
+        LocationRefreshPresenter.shared.onGuideClosed = { [weak self] in
+            self?.handleRefreshGuideClosed()
+        }
+
+        // Detect offline / Airplane Mode transitions so unconfirmed distant sessions immediately
+        // boost NMEA acquisition and nudge CoreLocation without requiring manual retry.
+        networkPathMonitor.pathUpdateHandler = { [weak self] path in
+            let satisfied = (path.status == .satisfied)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let wasSatisfied = self.lastNetworkSatisfied
+                self.lastNetworkSatisfied = satisfied
+                if wasSatisfied == true && !satisfied,
+                   self.snapshot.isRunning,
+                   !self.isAccessoryLocationConfirmed,
+                   !self.isLocationRefreshGuideActive {
+                    self.events.append(ProtocolEvent(
+                        name: "network_offline_lock_boost",
+                        detail: "{\"event\":\"network_offline_lock_boost\"}"
+                    ))
+                    self.session?.triggerFastBurst(seconds: 15.0)
+                    if self.snapshot.activeSentences.isEmpty {
+                        self.keepAlive.refreshAfterLocationToggle()
+                    } else {
+                        self.keepAlive.nudgeLocationSubscription()
+                    }
+                }
+            }
+        }
+        networkPathMonitor.start(queue: networkPathQueue)
 
         self.keepAlive.onDiagnostic = { [weak self] event, details in
             guard let self else { return }
@@ -300,9 +460,16 @@ public final class RelocViewModel: ObservableObject {
             pendingBackgroundTrajectoryProgress = nil
             trajectoryProgress = pendingProg
         }
+        if let pendingJoy = pendingBackgroundJoystickProgress {
+            pendingBackgroundJoystickProgress = nil
+            joystickProgress = pendingJoy
+        }
         coreLocation.flushLatestToUI()
         if snapshot.isRunning {
             session?.wakeForImmediateReconnect()
+            if isLocationRefreshGuideActive && !LocationRefreshPresenter.shared.isActive {
+                handleRefreshGuideClosed()
+            }
         }
     }
 
@@ -328,11 +495,22 @@ public final class RelocViewModel: ObservableObject {
         return mapCoord
     }
 
-    /// Converts an `MKLocalSearch` result coordinate into canonical WGS-84.
-    /// Apple's `MKLocalSearch` returns GCJ-02 for Mainland China POIs regardless of custom tile overlays.
-    public func selectSearchResultCoordinate(_ searchCoord: CLLocationCoordinate2D, name: String? = nil, address: String? = nil) {
+    /// Converts a search result coordinate into canonical WGS-84.
+    /// Apple's `MKLocalSearch` returns GCJ-02 for Mainland China POIs regardless of custom tile overlays,
+    /// while Hong Kong, Macau, Taiwan, Japan, Korea, all overseas POIs, and OSM Nominatim results are pure WGS-84.
+    public func selectSearchResultCoordinate(
+        _ searchCoord: CLLocationCoordinate2D,
+        isoCountryCode: String? = nil,
+        isPureWGS84: Bool = false,
+        name: String? = nil,
+        address: String? = nil
+    ) {
         let wgs: CLLocationCoordinate2D
-        if gcj02CorrectionEnabled && !CoordinateTransform.isOutsideChina(lat: searchCoord.latitude, lon: searchCoord.longitude) {
+        if !isPureWGS84 && gcj02CorrectionEnabled && CoordinateTransform.shouldApplyGCJ02(
+            lat: searchCoord.latitude,
+            lon: searchCoord.longitude,
+            isoCountryCode: isoCountryCode
+        ) {
             wgs = CoordinateTransform.gcj02ToWGS84(lat: searchCoord.latitude, lon: searchCoord.longitude)
         } else {
             wgs = searchCoord
@@ -349,10 +527,30 @@ public final class RelocViewModel: ObservableObject {
         if isRouteSessionActive, let loc = trajectoryProgress?.currentLocation {
             return toMapCoordinate(CLLocationCoordinate2D(latitude: loc.latitude, longitude: loc.longitude))
         }
-        if controlMode == .route, let first = routeWaypoints.first {
-            return toMapCoordinate(first.coordinate)
+        if isJoystickSessionActive, let loc = joystickProgress?.currentLocation {
+            return toMapCoordinate(CLLocationCoordinate2D(latitude: loc.latitude, longitude: loc.longitude))
+        }
+        if controlMode == .route {
+            if let preview = routeStartPreviewCoordinate {
+                return preview
+            }
+            if let first = routeWaypoints.first {
+                return toMapCoordinate(first.coordinate)
+            }
         }
         return toMapCoordinate(CLLocationCoordinate2D(latitude: targetLocation.latitude, longitude: targetLocation.longitude))
+    }
+
+    /// Preview pin coordinate along the planned polyline when starting from mid-route (`routeStartProgress > 0`).
+    public var routeStartPreviewCoordinate: CLLocationCoordinate2D? {
+        guard controlMode == .route,
+              !isRouteSessionActive,
+              plannedRoutePoints.count >= 2,
+              routeStartProgress > 0.005,
+              let pt = RouteGeometry.samplePoint(along: plannedRoutePoints, atProgress: routeStartProgress) else {
+            return nil
+        }
+        return toMapCoordinate(pt.coordinate)
     }
 
     public var routeMapPolylineCoordinates: [CLLocationCoordinate2D] {
@@ -365,6 +563,10 @@ public final class RelocViewModel: ObservableObject {
         return routeWaypoints.map { toMapCoordinate($0.coordinate) }
     }
 
+    public var canDragRouteWaypoints: Bool {
+        controlMode == .route && !isRouteSessionActive && !isFreehandDrawing && freehandBasePoints.isEmpty && !routeWaypoints.isEmpty
+    }
+
     public var canStartRouteSession: Bool {
         mfiSigner != nil
             && !snapshot.isRunning
@@ -375,6 +577,9 @@ public final class RelocViewModel: ObservableObject {
 
     public var currentLiveCoordinateSummary: TargetLocation {
         if isRouteSessionActive, let loc = trajectoryProgress?.currentLocation {
+            return loc
+        }
+        if isJoystickSessionActive, let loc = joystickProgress?.currentLocation {
             return loc
         }
         return targetLocation
@@ -395,10 +600,19 @@ public final class RelocViewModel: ObservableObject {
         )
     }
 
-    public func addRouteWaypoint(fromSearchCoordinate searchCoord: CLLocationCoordinate2D, name: String? = nil) {
+    public func addRouteWaypoint(
+        fromSearchCoordinate searchCoord: CLLocationCoordinate2D,
+        isoCountryCode: String? = nil,
+        isPureWGS84: Bool = false,
+        name: String? = nil
+    ) {
         guard !isRouteSessionActive else { return }
         let wgs: CLLocationCoordinate2D
-        if gcj02CorrectionEnabled && !CoordinateTransform.isOutsideChina(lat: searchCoord.latitude, lon: searchCoord.longitude) {
+        if !isPureWGS84 && gcj02CorrectionEnabled && CoordinateTransform.shouldApplyGCJ02(
+            lat: searchCoord.latitude,
+            lon: searchCoord.longitude,
+            isoCountryCode: isoCountryCode
+        ) {
             wgs = CoordinateTransform.gcj02ToWGS84(lat: searchCoord.latitude, lon: searchCoord.longitude)
         } else {
             wgs = searchCoord
@@ -413,8 +627,37 @@ public final class RelocViewModel: ObservableObject {
         )
     }
 
+    /// Moves an existing road-route waypoint after dragging its pin on the map and replans the route.
+    public func moveRouteWaypoint(at index: Int, toMapCoordinate mapCoord: CLLocationCoordinate2D) {
+        guard !isRouteSessionActive,
+              freehandBasePoints.isEmpty,
+              routeWaypoints.indices.contains(index) else { return }
+        let wgs = fromMapCoordinate(mapCoord)
+        var updated = routeWaypoints[index]
+        updated.latitude = wgs.latitude
+        updated.longitude = wgs.longitude
+        updated.name = String(format: "%.5f, %.5f", wgs.latitude, wgs.longitude)
+        routeWaypoints[index] = updated
+        routeStartProgress = 0.0
+        if routeWaypoints.count >= 2 {
+            replanCurrentRoute()
+        } else {
+            plannedRoutePoints = [updated.routePoint]
+            plannedRouteDistanceMeters = 0
+        }
+    }
+
     public func addRouteWaypointWGS(_ point: RoutePoint, name: String) {
         guard !isRouteSessionActive else { return }
+        if !freehandBasePoints.isEmpty {
+            freehandBasePoints = []
+            previousFreehandBasePoints = nil
+            importedRouteTitle = nil
+            routeWaypoints = []
+            plannedRoutePoints = []
+            plannedRouteDistanceMeters = 0
+        }
+        routeCreationMode = .road
         let wp = RouteWaypoint(
             name: name,
             latitude: point.latitude,
@@ -431,8 +674,118 @@ public final class RelocViewModel: ObservableObject {
         }
     }
 
+    public func beginFreehandDrawing() {
+        guard !isRouteSessionActive else { return }
+        controlMode = .route
+        routeCreationMode = .freehand
+        isFreehandDrawing = true
+    }
+
+    public func cancelFreehandDrawing() {
+        isFreehandDrawing = false
+    }
+
+    /// Commits a user-drawn map-coordinate stroke as a smooth freehand trajectory.
+    public func commitFreehandStroke(mapCoordinates: [CLLocationCoordinate2D]) {
+        guard !isRouteSessionActive else { return }
+        let wgsCoords = mapCoordinates.map { fromMapCoordinate($0) }
+        guard let result = FreehandRouteProcessor.processStroke(
+            rawCoordinates: wgsCoords,
+            defaultAltitude: inspectedLocation.altitude,
+            preferredLoopMode: routeLoopMode
+        ) else {
+            return
+        }
+
+        routePlanningTask?.cancel()
+        routePlanningGeneration += 1
+        let gen = routePlanningGeneration
+
+        if !freehandBasePoints.isEmpty {
+            previousFreehandBasePoints = freehandBasePoints
+        }
+        freehandBasePoints = result.basePoints
+        importedRouteTitle = nil
+        isFreehandDrawing = false
+        routeCreationMode = .freehand
+        routePlanningNotice = nil
+        routeStartProgress = 0.0
+
+        if result.isClosedLoop && routeLoopMode != .loop {
+            suppressRouteReplan = true
+            routeLoopMode = .loop
+            suppressRouteReplan = false
+        }
+
+        applyFreehandPoints(result.points, closed: result.isClosedLoop)
+
+        // Enrich freehand vertices with smooth real terrain elevation in the background.
+        let snapshotBase = freehandBasePoints
+        routePlanningTask = Task { @MainActor [weak self] in
+            let enrichedBase = await RoadRoutePlanner.enrichElevationProfile(for: snapshotBase)
+            guard !Task.isCancelled,
+                  let self,
+                  !self.isRouteSessionActive,
+                  self.routePlanningGeneration == gen,
+                  !self.freehandBasePoints.isEmpty else {
+                return
+            }
+            self.freehandBasePoints = enrichedBase
+            let closed = self.routeLoopMode == .loop
+            let rebuilt = FreehandRouteProcessor.buildPolyline(fromBase: enrichedBase, closed: closed)
+            self.applyFreehandPoints(rebuilt, closed: closed)
+        }
+    }
+
+    private func rebuildFreehandRouteForLoopMode() {
+        guard !freehandBasePoints.isEmpty else { return }
+        let closed = routeLoopMode == .loop
+        let rebuilt = FreehandRouteProcessor.buildPolyline(fromBase: freehandBasePoints, closed: closed)
+        applyFreehandPoints(rebuilt, closed: closed)
+    }
+
+    private func applyFreehandPoints(_ points: [RoutePoint], closed: Bool) {
+        plannedRoutePoints = points
+        plannedRouteDistanceMeters = RouteGeometry.totalDistance(of: points)
+        guard let first = points.first, let last = points.last else {
+            routeWaypoints = []
+            return
+        }
+        let startWP = RouteWaypoint(
+            name: L10n.tr("route.pin.start"),
+            latitude: first.latitude,
+            longitude: first.longitude,
+            altitude: first.altitude
+        )
+        if closed || RouteGeometry.distanceMeters(from: first, to: last) <= 20.0 {
+            routeWaypoints = [startWP]
+        } else {
+            let endWP = RouteWaypoint(
+                name: L10n.tr("route.pin.end"),
+                latitude: last.latitude,
+                longitude: last.longitude,
+                altitude: last.altitude
+            )
+            routeWaypoints = [startWP, endWP]
+        }
+    }
+
     public func undoLastRouteWaypoint() {
-        guard !isRouteSessionActive, !routeWaypoints.isEmpty else { return }
+        guard !isRouteSessionActive else { return }
+        if !freehandBasePoints.isEmpty {
+            routePlanningTask?.cancel()
+            routePlanningTask = nil
+            isPlanningRoute = false
+            if let prev = previousFreehandBasePoints {
+                freehandBasePoints = prev
+                previousFreehandBasePoints = nil
+                rebuildFreehandRouteForLoopMode()
+            } else {
+                clearRoute()
+            }
+            return
+        }
+        guard !routeWaypoints.isEmpty else { return }
         routeWaypoints.removeLast()
         if routeWaypoints.count >= 2 {
             replanCurrentRoute()
@@ -447,7 +800,14 @@ public final class RelocViewModel: ObservableObject {
     }
 
     public func reverseRouteWaypoints() {
-        guard !isRouteSessionActive, routeWaypoints.count >= 2 else { return }
+        guard !isRouteSessionActive else { return }
+        routeStartProgress = 0.0
+        if !freehandBasePoints.isEmpty {
+            freehandBasePoints.reverse()
+            rebuildFreehandRouteForLoopMode()
+            return
+        }
+        guard routeWaypoints.count >= 2 else { return }
         routeWaypoints.reverse()
         replanCurrentRoute()
     }
@@ -457,10 +817,17 @@ public final class RelocViewModel: ObservableObject {
         routePlanningTask?.cancel()
         routePlanningTask = nil
         isPlanningRoute = false
+        freehandBasePoints = []
+        previousFreehandBasePoints = nil
+        importedRouteTitle = nil
         routeWaypoints = []
         plannedRoutePoints = []
         plannedRouteDistanceMeters = 0
+        routeStartProgress = 0.0
         routePlanningNotice = nil
+        if routeCreationMode == .freehand {
+            isFreehandDrawing = true
+        }
     }
 
     public func replanCurrentRoute() {
@@ -513,7 +880,10 @@ public final class RelocViewModel: ObservableObject {
             preset: routePreset,
             speedMetersPerSecond: routeSpeedMps,
             loopMode: routeLoopMode,
-            totalDistanceMeters: plannedRouteDistanceMeters
+            totalDistanceMeters: plannedRouteDistanceMeters,
+            isFreehand: !freehandBasePoints.isEmpty,
+            targetDistanceMeters: effectiveRouteTargetDistanceMeters,
+            targetLaps: effectiveRouteTargetLaps
         )
         savedRoutes.insert(route, at: 0)
         store.saveSavedRoutes(savedRoutes)
@@ -542,13 +912,265 @@ public final class RelocViewModel: ObservableObject {
         suppressRouteReplan = true
         defer { suppressRouteReplan = false }
         controlMode = .route
+        isFreehandDrawing = false
+        routeCreationMode = route.isFreehand ? .freehand : .road
+        freehandBasePoints = route.isFreehand ? route.points : []
+        previousFreehandBasePoints = nil
+        importedRouteTitle = route.isFreehand ? route.name : nil
         routeWaypoints = route.waypoints
         plannedRoutePoints = route.points
         plannedRouteDistanceMeters = route.totalDistanceMeters
         routePreset = route.preset
         routeSpeedMps = route.speedMetersPerSecond
         routeLoopMode = route.loopMode
+        routeStartProgress = 0.0
+        if let distGoal = route.targetDistanceMeters, distGoal >= 200.0 {
+            routeStopGoalKind = .distance
+            routeTargetDistanceKm = (distGoal / 100.0).rounded() / 10.0
+        } else if let lapGoal = route.targetLaps, lapGoal >= 1 {
+            routeStopGoalKind = .laps
+            routeTargetLaps = lapGoal
+        } else {
+            routeStopGoalKind = .none
+        }
         routePlanningNotice = nil
+    }
+
+    // MARK: - GPX Import & Export
+
+    /// Imports a `.gpx` file (track, route, or waypoint) into Reloc without overwriting coordinates via road routing.
+    @discardableResult
+    public func importGPXFile(from url: URL) -> Bool {
+        guard !isRouteSessionActive else {
+            alertMessage = L10n.tr("gpx.error.stop_session_first")
+            return false
+        }
+        do {
+            let result = try GPXCodec.parse(fileURL: url, defaultAltitude: inspectedLocation.altitude)
+            if result.isSinglePoint, let pt = result.points.first {
+                controlMode = .fixed
+                isFreehandDrawing = false
+                selectWGSLocation(
+                    TargetLocation(latitude: pt.latitude, longitude: pt.longitude, altitude: pt.altitude),
+                    name: result.name,
+                    resolveAltitude: !result.hasElevation
+                )
+                pendingCameraFocus = pendingMapCoordinate ?? activeMapCoordinate
+                return true
+            }
+
+            routePlanningTask?.cancel()
+            routePlanningGeneration += 1
+            let gen = routePlanningGeneration
+
+            if !freehandBasePoints.isEmpty {
+                previousFreehandBasePoints = freehandBasePoints
+            }
+            controlMode = .route
+            isFreehandDrawing = false
+            routeCreationMode = .freehand
+            freehandBasePoints = result.points
+            importedRouteTitle = result.name
+            routePlanningNotice = nil
+            routeStartProgress = 0.0
+
+            let shouldLoop = result.isClosedLoop
+            suppressRouteReplan = true
+            routeLoopMode = shouldLoop ? .loop : (routeLoopMode == .loop ? .once : routeLoopMode)
+            suppressRouteReplan = false
+
+            let activeClosed = routeLoopMode == .loop
+            let finalPoints = FreehandRouteProcessor.buildPolyline(fromBase: result.points, closed: activeClosed)
+            applyFreehandPoints(finalPoints, closed: activeClosed)
+            if let first = finalPoints.first {
+                pendingCameraFocus = toMapCoordinate(first.coordinate)
+            }
+
+            if !result.hasElevation {
+                let snapshotBase = freehandBasePoints
+                routePlanningTask = Task { @MainActor [weak self] in
+                    let enrichedBase = await RoadRoutePlanner.enrichElevationProfile(for: snapshotBase)
+                    guard !Task.isCancelled, let self, self.routePlanningGeneration == gen, !self.freehandBasePoints.isEmpty else {
+                        return
+                    }
+                    self.freehandBasePoints = enrichedBase
+                    let closed = self.routeLoopMode == .loop
+                    let rebuilt = FreehandRouteProcessor.buildPolyline(fromBase: enrichedBase, closed: closed)
+                    self.applyFreehandPoints(rebuilt, closed: closed)
+                }
+            }
+            return true
+        } catch {
+            alertMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Exports the currently planned route (road, freehand, or imported GPX) to a temporary `.gpx` file URL.
+    public func exportCurrentRouteToGPX(suggestedName: String) -> URL? {
+        guard plannedRoutePoints.count >= 2 else { return nil }
+        let data = GPXCodec.exportRoute(
+            name: suggestedName,
+            points: plannedRoutePoints,
+            waypoints: routeWaypoints,
+            speedMetersPerSecond: routeSpeedMps
+        )
+        do {
+            return try GPXCodec.writeTemporaryFile(name: suggestedName, data: data)
+        } catch {
+            alertMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Exports a saved route to a temporary `.gpx` file URL.
+    public func exportSavedRouteToGPX(_ route: SavedRoute) -> URL? {
+        guard route.points.count >= 2 else { return nil }
+        let data = GPXCodec.exportRoute(
+            name: route.name,
+            points: route.points,
+            waypoints: route.waypoints,
+            speedMetersPerSecond: route.speedMetersPerSecond,
+            startDate: route.createdAt
+        )
+        do {
+            return try GPXCodec.writeTemporaryFile(name: route.name, data: data)
+        } catch {
+            alertMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Exports the currently inspected fixed pin as a GPX 1.1 waypoint file.
+    public func exportCurrentPinToGPX() -> URL? {
+        let loc = inspectedLocation
+        let name = selectedPlaceName.isEmpty ? "Reloc_Pin" : selectedPlaceName
+        let data = GPXCodec.exportWaypoint(name: name, location: loc)
+        do {
+            return try GPXCodec.writeTemporaryFile(name: name, data: data)
+        } catch {
+            alertMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Exports a specific favorite place as a GPX 1.1 waypoint file.
+    public func exportFavoriteToGPX(_ favorite: FavoriteLocation) -> URL? {
+        let loc = TargetLocation(latitude: favorite.latitude, longitude: favorite.longitude, altitude: favorite.altitude)
+        let data = GPXCodec.exportWaypoint(name: favorite.name, location: loc)
+        do {
+            return try GPXCodec.writeTemporaryFile(name: favorite.name, data: data)
+        } catch {
+            alertMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    // MARK: - Favorites & Routes Backup (JSON Import / Export)
+
+    /// Exports all saved places and saved routes as a versioned Reloc JSON backup file.
+    public func exportBackupArchive() -> URL? {
+        guard !favorites.isEmpty || !savedRoutes.isEmpty else {
+            alertMessage = L10n.tr("backup.error.nothing_to_export")
+            return nil
+        }
+        do {
+            let data = try RelocBackupCodec.encode(favorites: favorites, savedRoutes: savedRoutes)
+            return try RelocBackupCodec.writeTemporaryBackupFile(data: data)
+        } catch {
+            alertMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Imports a Reloc JSON backup archive, merging favorites and routes non-destructively without duplicates.
+    @discardableResult
+    public func importBackupArchive(from url: URL) -> RelocBackupImportSummary? {
+        do {
+            let archive = try RelocBackupCodec.decode(fileURL: url)
+            var addedFavorites = 0
+            var updatedFavorites = 0
+            var mergedFavorites = favorites
+
+            for incoming in archive.favorites {
+                if let idx = mergedFavorites.firstIndex(where: { existing in
+                    existing.id == incoming.id || (
+                        existing.name == incoming.name
+                        && RouteGeometry.distanceMeters(
+                            lat1: existing.latitude, lon1: existing.longitude,
+                            lat2: incoming.latitude, lon2: incoming.longitude
+                        ) < 10.0
+                    )
+                }) {
+                    if mergedFavorites[idx] != incoming {
+                        mergedFavorites[idx] = incoming
+                        updatedFavorites += 1
+                    }
+                } else {
+                    mergedFavorites.append(incoming)
+                    addedFavorites += 1
+                }
+            }
+
+            var addedRoutes = 0
+            var updatedRoutes = 0
+            var mergedRoutes = savedRoutes
+
+            for incoming in archive.savedRoutes {
+                if let idx = mergedRoutes.firstIndex(where: { existing in
+                    if existing.id == incoming.id { return true }
+                    guard existing.name == incoming.name,
+                          let eFirst = existing.points.first, let eLast = existing.points.last,
+                          let iFirst = incoming.points.first, let iLast = incoming.points.last else {
+                        return false
+                    }
+                    return abs(existing.totalDistanceMeters - incoming.totalDistanceMeters) < 5.0
+                        && RouteGeometry.distanceMeters(from: eFirst, to: iFirst) < 10.0
+                        && RouteGeometry.distanceMeters(from: eLast, to: iLast) < 10.0
+                }) {
+                    if mergedRoutes[idx] != incoming {
+                        mergedRoutes[idx] = incoming
+                        updatedRoutes += 1
+                    }
+                } else {
+                    mergedRoutes.append(incoming)
+                    addedRoutes += 1
+                }
+            }
+
+            favorites = mergedFavorites
+            savedRoutes = mergedRoutes
+            store.saveFavorites(favorites)
+            store.saveSavedRoutes(savedRoutes)
+            RelocAppShortcuts.updateAppShortcutParameters()
+
+            let summary = RelocBackupImportSummary(
+                addedFavorites: addedFavorites,
+                updatedFavorites: updatedFavorites,
+                addedRoutes: addedRoutes,
+                updatedRoutes: updatedRoutes
+            )
+            let updatedTotal = updatedFavorites + updatedRoutes
+            if updatedTotal > 0 {
+                alertMessage = L10n.format("backup.import.success_with_updates", addedFavorites, addedRoutes, updatedTotal)
+            } else {
+                alertMessage = L10n.format("backup.import.success", addedFavorites, addedRoutes)
+            }
+            return summary
+        } catch {
+            alertMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Auto-dispatches an imported file URL to JSON backup restore or GPX import based on file extension / content.
+    @discardableResult
+    public func importDataFile(from url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        if ext == "json" {
+            return importBackupArchive(from: url) != nil
+        }
+        return importGPXFile(from: url)
     }
 
     public func toggleTrajectoryPause() {
@@ -822,7 +1444,8 @@ public final class RelocViewModel: ObservableObject {
                 }
             }
 
-            geocoder.reverseGeocodeLocation(clLoc) { placemarks, _ in
+            let preferredLocale: Locale? = L10n.currentLanguage == .system ? nil : L10n.currentLanguage.locale
+            geocoder.reverseGeocodeLocation(clLoc, preferredLocale: preferredLocale) { placemarks, _ in
                 guard let pm = placemarks?.first else {
                     finish(nil)
                     return
@@ -847,7 +1470,7 @@ public final class RelocViewModel: ObservableObject {
     ) async -> (title: String, address: String)? {
         let latStr = String(format: "%.6f", wgsLocation.latitude)
         let lonStr = String(format: "%.6f", wgsLocation.longitude)
-        let acceptLang = L10n.isChinese ? "zh-CN,en" : "en,zh-CN"
+        let acceptLang = L10n.nominatimAcceptLanguage
         guard let url = URL(string: "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=\(latStr)&lon=\(lonStr)&zoom=18&addressdetails=1&accept-language=\(acceptLang)") else {
             return nil
         }
@@ -898,7 +1521,7 @@ public final class RelocViewModel: ObservableObject {
     ) async -> (title: String, address: String)? {
         let latStr = String(format: "%.6f", wgsLocation.latitude)
         let lonStr = String(format: "%.6f", wgsLocation.longitude)
-        let lang = L10n.isChinese ? "zh" : "en"
+        let lang = L10n.bigDataCloudLanguage
         guard let url = URL(string: "https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=\(latStr)&longitude=\(lonStr)&localityLanguage=\(lang)") else {
             return nil
         }
@@ -975,40 +1598,100 @@ public final class RelocViewModel: ObservableObject {
         startSessionInternal(
             mode: mode,
             trajectoryDriver: nil,
+            joystickDriver: nil,
             durationOverrideSeconds: durationOverrideSeconds
         )
     }
 
     public func startRouteSession(durationOverrideSeconds: TimeInterval? = nil) {
         guard !snapshot.isRunning, plannedRoutePoints.count >= 2 else { return }
+        isFreehandDrawing = false
         guard let driver = TrajectoryDriver(
             points: plannedRoutePoints,
             preset: routePreset,
             speedMetersPerSecond: routeSpeedMps,
             loopMode: routeLoopMode,
             realisticMotionEnabled: routeRealisticMotionEnabled,
-            waitForStartLock: true
+            waitForStartLock: true,
+            initialProgress: routeStartProgress,
+            targetTotalDistanceMeters: effectiveRouteTargetDistanceMeters,
+            targetLaps: effectiveRouteTargetLaps,
+            briefStopsEnabled: routeBriefStopsEnabled
         ) else { return }
 
         let startLoc = driver.currentTargetLocation()
         targetLocation = startLoc
         pendingLocation = nil
-        if let firstName = routeWaypoints.first?.name, let lastName = routeWaypoints.last?.name {
+        if !freehandBasePoints.isEmpty {
+            selectedPlaceName = importedRouteTitle ?? "\(L10n.tr("route.creation.freehand")) · \(RouteGeometry.formatDistance(plannedRouteDistanceMeters))"
+        } else if let firstName = routeWaypoints.first?.name, let lastName = routeWaypoints.last?.name {
             selectedPlaceName = "\(firstName) → \(lastName)"
         }
         isRouteSessionActive = true
+        isJoystickSessionActive = false
+        joystickProgress = nil
+        joystickCruiseLocked = false
+        pendingBackgroundJoystickProgress = nil
         trajectoryProgress = driver.initialProgress()
         pendingBackgroundTrajectoryProgress = nil
         startSessionInternal(
             mode: .send,
             trajectoryDriver: driver,
+            joystickDriver: nil,
             durationOverrideSeconds: durationOverrideSeconds
         )
+    }
+
+    public func startJoystickSession(durationOverrideSeconds: TimeInterval? = nil) {
+        guard !snapshot.isRunning else { return }
+        isFreehandDrawing = false
+        if let pending = pendingLocation {
+            targetLocation = pending
+            pendingLocation = nil
+        }
+        let driver = JoystickDriver(
+            initialLocation: targetLocation,
+            maxSpeedMps: joystickSpeedMps,
+            realisticMotionEnabled: routeRealisticMotionEnabled,
+            waitForStartLock: true
+        )
+        controlMode = .joystick
+        isRouteSessionActive = false
+        trajectoryProgress = nil
+        pendingBackgroundTrajectoryProgress = nil
+        isJoystickSessionActive = true
+        joystickCruiseLocked = false
+        joystickProgress = driver.initialProgress()
+        pendingBackgroundJoystickProgress = nil
+        recordRecent(name: selectedPlaceName, subtitle: selectedPlaceAddress, location: targetLocation)
+        persistRecoveryRecord()
+        startSessionInternal(
+            mode: .send,
+            trajectoryDriver: nil,
+            joystickDriver: driver,
+            durationOverrideSeconds: durationOverrideSeconds
+        )
+    }
+
+    public func updateJoystickInput(magnitude: Double, headingDegrees: Double?) {
+        guard isJoystickSessionActive else { return }
+        session?.setJoystickVector(magnitude: magnitude, headingDegrees: headingDegrees)
+    }
+
+    public func toggleJoystickCruiseLock() {
+        guard isJoystickSessionActive else { return }
+        joystickCruiseLocked.toggle()
+        session?.setJoystickCruiseLocked(joystickCruiseLocked)
+        if var prog = joystickProgress {
+            prog.isCruiseLocked = joystickCruiseLocked
+            joystickProgress = prog
+        }
     }
 
     private func startSessionInternal(
         mode: SessionMode,
         trajectoryDriver: TrajectoryDriver?,
+        joystickDriver: JoystickDriver?,
         durationOverrideSeconds: TimeInterval? = nil
     ) {
         guard !snapshot.isRunning else { return }
@@ -1016,13 +1699,19 @@ public final class RelocViewModel: ObservableObject {
             alertMessage = L10n.tr("error.mfi_unavailable")
             isRouteSessionActive = false
             trajectoryProgress = nil
+            isJoystickSessionActive = false
+            joystickProgress = nil
             return
         }
 
-        if trajectoryDriver == nil {
+        if trajectoryDriver == nil && joystickDriver == nil {
             isRouteSessionActive = false
             trajectoryProgress = nil
             pendingBackgroundTrajectoryProgress = nil
+            isJoystickSessionActive = false
+            joystickProgress = nil
+            joystickCruiseLocked = false
+            pendingBackgroundJoystickProgress = nil
             if let pending = pendingLocation {
                 targetLocation = pending
                 pendingLocation = nil
@@ -1061,6 +1750,7 @@ public final class RelocViewModel: ObservableObject {
             initialLocation: targetLocation,
             microJitterEnabled: microJitterEnabled,
             trajectoryDriver: trajectoryDriver,
+            joystickDriver: joystickDriver,
             onEvent: { [weak self] event in
                 Task { @MainActor in
                     guard let self, self.session?.id == sessionID else { return }
@@ -1092,8 +1782,12 @@ public final class RelocViewModel: ObservableObject {
                         self.session = nil
                         self.pendingBackgroundSnapshot = nil
                         self.pendingBackgroundTrajectoryProgress = nil
+                        self.pendingBackgroundJoystickProgress = nil
                         self.isRouteSessionActive = false
                         self.trajectoryProgress = nil
+                        self.isJoystickSessionActive = false
+                        self.joystickProgress = nil
+                        self.joystickCruiseLocked = false
                         self.cancelTriggerTasks()
                         self.keepAlive.stop()
                         self.coreLocation.setExternalFeedActive(false)
@@ -1118,11 +1812,26 @@ public final class RelocViewModel: ObservableObject {
                         || self.trajectoryProgress?.isWaitingForStartLock != progress.isWaitingForStartLock
                         || self.trajectoryProgress?.lapCount != progress.lapCount
                         || self.trajectoryProgress?.isPaused != progress.isPaused
+                        || self.trajectoryProgress?.isBriefStopping != progress.isBriefStopping
                     if self.isAppInForeground || importantTransition {
                         self.pendingBackgroundTrajectoryProgress = nil
                         self.trajectoryProgress = progress
                     } else {
                         self.pendingBackgroundTrajectoryProgress = progress
+                    }
+                }
+            },
+            onJoystickProgress: { [weak self] progress in
+                Task { @MainActor in
+                    guard let self, self.session?.id == sessionID else { return }
+                    let importantTransition = self.joystickProgress?.isWaitingForStartLock != progress.isWaitingForStartLock
+                        || self.joystickProgress?.isCruiseLocked != progress.isCruiseLocked
+                        || self.joystickProgress?.isMoving != progress.isMoving
+                    if self.isAppInForeground || importantTransition {
+                        self.pendingBackgroundJoystickProgress = nil
+                        self.joystickProgress = progress
+                    } else {
+                        self.pendingBackgroundJoystickProgress = progress
                     }
                 }
             },
@@ -1144,6 +1853,12 @@ public final class RelocViewModel: ObservableObject {
                     self.handleLocationStoppedBySystem()
                 }
             },
+            onSubscriptionRestarted: { [weak self] in
+                Task { @MainActor in
+                    guard let self, self.session?.id == sessionID else { return }
+                    self.keepAlive.refreshAfterLocationToggle()
+                }
+            },
             onReconnecting: { [weak self] in
                 Task { @MainActor in
                     guard let self, self.session?.id == sessionID else { return }
@@ -1163,8 +1878,12 @@ public final class RelocViewModel: ObservableObject {
         session = nil
         pendingBackgroundSnapshot = nil
         pendingBackgroundTrajectoryProgress = nil
+        pendingBackgroundJoystickProgress = nil
         isRouteSessionActive = false
         trajectoryProgress = nil
+        isJoystickSessionActive = false
+        joystickProgress = nil
+        joystickCruiseLocked = false
         activeSession?.stop()
         keepAlive.stop()
         coreLocation.setExternalFeedActive(false)
@@ -1259,6 +1978,8 @@ public final class RelocViewModel: ObservableObject {
                     headline: L10n.tr("pip.step3.reopened.headline"),
                     subtitle: L10n.tr("pip.step3.reopened.subtitle")
                 )
+                session?.triggerFastBurst(seconds: 25.0)
+                schedulePostRefreshRecoveryWatchdog()
             }
             return
         }
@@ -1290,7 +2011,7 @@ public final class RelocViewModel: ObservableObject {
         isRestoreRefreshGuideActive = true
         isRestoringRealLocation = true
         lastRestoreAuthStatus = coreLocation.authorizationStatus
-        LocationRefreshPresenter.shared.startLocationRefreshGuide()
+        LocationRefreshPresenter.shared.startLocationRefreshGuide(countdownSeconds: 7, isDistant: false)
         LocationRefreshPresenter.shared.updateLocationRefresh(
             step: 1,
             headline: L10n.tr("pip.step1.headline"),
@@ -1306,8 +2027,9 @@ public final class RelocViewModel: ObservableObject {
 
     private func startRestoreRefreshCountdown() {
         refreshCountdownTask?.cancel()
+        let countdownTotal = 7
         refreshCountdownTask = Task { @MainActor [weak self] in
-            for remaining in stride(from: 7, through: 1, by: -1) {
+            for remaining in stride(from: countdownTotal, through: 1, by: -1) {
                 guard !Task.isCancelled, let self, self.isRestoreRefreshGuideActive else { return }
                 LocationRefreshPresenter.shared.updateLocationRefresh(
                     step: 2,
@@ -1335,6 +2057,8 @@ public final class RelocViewModel: ObservableObject {
         subscriptionPulseTask = nil
         lockWatchdogTask?.cancel()
         lockWatchdogTask = nil
+        postRefreshRecoveryTask?.cancel()
+        postRefreshRecoveryTask = nil
         unexpectedStopRecoveryTask?.cancel()
         unexpectedStopRecoveryTask = nil
         refreshCountdownTask?.cancel()
@@ -1416,8 +2140,9 @@ public final class RelocViewModel: ObservableObject {
                     headline: L10n.tr("pip.step3.subscribed.headline"),
                     subtitle: L10n.tr("pip.step3.subscribed.subtitle")
                 )
+                session?.triggerFastBurst(seconds: 25.0)
+                schedulePostRefreshRecoveryWatchdog()
             }
-            // Do not schedule CoreLocation pulses while the PiP refresh guide is active.
             return
         }
         scheduleLockWatchdog()
@@ -1514,6 +2239,21 @@ public final class RelocViewModel: ObservableObject {
             let real = TargetLocation(latitude: telemetry.latitude, longitude: telemetry.longitude, altitude: telemetry.altitude)
             lastKnownRealLocation = real
             session?.setFallbackRealLocation(real)
+            let shouldPersist: Bool
+            if let prev = lastPersistedRealLocation {
+                shouldPersist = RouteGeometry.distanceMeters(
+                    lat1: prev.latitude,
+                    lon1: prev.longitude,
+                    lat2: real.latitude,
+                    lon2: real.longitude
+                ) > 50.0
+            } else {
+                shouldPersist = true
+            }
+            if shouldPersist {
+                lastPersistedRealLocation = real
+                store.saveCachedRealLocation(real)
+            }
         }
         // Post-stop recovery check: wait until `locationd` delivers a fresh internal (non-accessory) fix.
         if isRestoringRealLocation && !snapshot.isRunning {
@@ -1586,7 +2326,8 @@ public final class RelocViewModel: ObservableObject {
             } else {
                 movedMeters = 0.0
             }
-            if movedMeters >= 1.5 {
+            let moveFloorMeters = (isRouteSessionActive || isJoystickSessionActive) ? 0.5 : 1.5
+            if movedMeters >= moveFloorMeters {
                 consecutiveVertAccIncreases = 0
             } else if telemetry.verticalAccuracy >= 0, let prevVert = lastAccessoryVerticalAccuracy {
                 if telemetry.verticalAccuracy > prevVert + 0.05 {
@@ -1615,6 +2356,15 @@ public final class RelocViewModel: ObservableObject {
             } else {
                 maxDistanceMeters = 50.0
             }
+        } else if isJoystickSessionActive {
+            let waitingForLock = session?.isTrajectoryWaitingForLock() ?? true
+            if waitingForLock {
+                maxDistanceMeters = 25.0
+            } else if let joy = joystickProgress, joy.isMoving {
+                maxDistanceMeters = max(40.0, joy.currentSpeedMps * 3.5)
+            } else {
+                maxDistanceMeters = 55.0
+            }
         } else {
             maxDistanceMeters = 80.0
         }
@@ -1631,10 +2381,10 @@ public final class RelocViewModel: ObservableObject {
             consecutiveLockLossCount = 0
         } else if isAccessoryLocationConfirmed {
             consecutiveLockLossCount += 1
-            // Immediately boost valid NMEA cadence on the first stray sample; require 2 consecutive
-            // misses (unless dead-reckoning freeze is already confirmed) before declaring lock lost.
-            if !isDeadReckoningFrozen && consecutiveLockLossCount < 2 {
-                session?.triggerFastBurst(seconds: 10.0)
+            // Tolerate brief transient lag on tight turns (3 misses while still accessory-sourced;
+            // 2 misses if internal GPS took over; immediate hold if @ClxADL dead-reckoning froze).
+            let requiredMisses = (telemetry.isProducedByAccessory == true) ? 3 : 2
+            if !isDeadReckoningFrozen && consecutiveLockLossCount < requiredMisses {
                 return
             }
         }
@@ -1655,6 +2405,9 @@ public final class RelocViewModel: ObservableObject {
                 ))
                 if isLocationRefreshGuideActive {
                     isLocationRefreshGuideActive = false
+                    locationRefreshRetryCount = 0
+                    postRefreshRecoveryTask?.cancel()
+                    postRefreshRecoveryTask = nil
                     refreshCountdownTask?.cancel()
                     refreshCountdownTask = nil
                     LocationRefreshPresenter.shared.finishLocationRefresh(
@@ -1713,19 +2466,99 @@ public final class RelocViewModel: ObservableObject {
         // Cancel background pulse/watchdog tasks immediately so they never stop CLLocationManager
         // and falsely trigger a 0xFFFC countdown before the user touches Location Services.
         cancelTriggerTasks()
-        // Acquire a temporary OS background task (~25–30s) paired with PiP to bridge the 7-second
+        let countdown = effectiveRefreshCountdownSeconds
+        let distant = isDistantFromRealLocation || isInspectedLocationDistant
+        // Acquire a temporary OS background task (~25–30s) paired with PiP to bridge the
         // Location Services OFF window without playing any silent audio.
         keepAlive.beginTransientBackgroundBridge(reason: "Reloc.LocationRefresh")
         isLocationRefreshGuideActive = true
         locationRefreshSawDisabled = false
+        locationRefreshRetryCount = 0
         lastRestoreAuthStatus = coreLocation.authorizationStatus
-        LocationRefreshPresenter.shared.startLocationRefreshGuide()
-        session?.triggerFastBurst(seconds: 45.0)
+        LocationRefreshPresenter.shared.startLocationRefreshGuide(countdownSeconds: countdown, isDistant: distant)
+        session?.triggerFastBurst(seconds: max(60.0, Double(countdown) + 40.0))
         guard !skipAutoSettingsJump else { return }
         // Wait briefly for PiP to enter smoothly before switching to Settings (prevents stutter).
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
             guard let self, self.isLocationRefreshGuideActive, self.snapshot.isRunning else { return }
             self.openLocationServicesSettings()
+        }
+    }
+
+    private func handleRefreshGuideClosed() {
+        let wasActive = isLocationRefreshGuideActive
+        isLocationRefreshGuideActive = false
+        isRestoreRefreshGuideActive = false
+        locationRefreshSawDisabled = false
+        refreshCountdownTask?.cancel()
+        refreshCountdownTask = nil
+        postRefreshRecoveryTask?.cancel()
+        postRefreshRecoveryTask = nil
+        if wasActive && snapshot.isRunning && !isAccessoryLocationConfirmed {
+            if snapshot.activeSentences.isEmpty {
+                handleSessionAuthenticated(forceRestartLocation: false)
+            } else {
+                scheduleLockWatchdog()
+            }
+        }
+    }
+
+    /// Actively monitors lock acquisition after the user re-enables Location Services inside the PiP guide.
+    /// Wakes stalled 0xFFFA subscriptions after long 18–30s OFF windows, nudges CoreLocation, and allows
+    /// an immediate in-place longer retry if distant cache still resisted the first toggle.
+    private func schedulePostRefreshRecoveryWatchdog() {
+        postRefreshRecoveryTask?.cancel()
+        postRefreshRecoveryTask = Task { @MainActor [weak self] in
+            // 2.5s: if 0xFFFA hasn't returned yet after a long Location Services OFF window, wake it.
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled, let self, self.snapshot.isRunning, self.isLocationRefreshGuideActive else { return }
+            if self.isAccessoryLocationConfirmed { return }
+            if self.snapshot.activeSentences.isEmpty {
+                self.events.append(ProtocolEvent(
+                    name: "post_refresh_wake_subscription",
+                    detail: "{\"event\":\"post_refresh_wake_subscription\"}"
+                ))
+                self.keepAlive.refreshAfterLocationToggle()
+                self.keepAlive.nudgeLocationSubscription()
+            }
+
+            // 4.5s: if subscribed but still unconfirmed, reinforce fast burst + non-destructive nudge.
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled, self.snapshot.isRunning, self.isLocationRefreshGuideActive else { return }
+            if self.isAccessoryLocationConfirmed { return }
+            self.session?.triggerFastBurst(seconds: 20.0)
+            self.keepAlive.nudgeLocationSubscription()
+
+            // 7.0s: if 0xFFFA is STILL missing, soft-reconnect the virtual iAP2 link.
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled, self.snapshot.isRunning, self.isLocationRefreshGuideActive else { return }
+            if self.isAccessoryLocationConfirmed { return }
+            if self.snapshot.activeSentences.isEmpty {
+                self.events.append(ProtocolEvent(
+                    name: "post_refresh_soft_reconnect",
+                    detail: "{\"event\":\"post_refresh_soft_reconnect\"}"
+                ))
+                self.session?.requestLinkReconnect(reason: "post_refresh_sub_timeout")
+                self.keepAlive.nudgeLocationSubscription()
+            } else {
+                self.session?.triggerFastBurst(seconds: 15.0)
+                self.keepAlive.nudgeLocationSubscription()
+            }
+
+            // 12.0s: if STILL unconfirmed (common on >100 km jumps or when Control Center Wi-Fi is still on),
+            // unlock immediate in-place retry with a deeper 25–30s countdown right inside Settings!
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled, self.snapshot.isRunning, self.isLocationRefreshGuideActive else { return }
+            if self.isAccessoryLocationConfirmed { return }
+            self.locationRefreshRetryCount += 1
+            self.locationRefreshSawDisabled = false
+            self.needsLocationServiceRefresh = true
+            let nextSecs = min(30, max(self.effectiveRefreshCountdownSeconds, 25))
+            LocationRefreshPresenter.shared.updateLocationRefresh(
+                step: 1,
+                headline: L10n.tr("pip.step3.retry_longer.headline"),
+                subtitle: L10n.format("pip.step3.retry_longer.subtitle", nextSecs)
+            )
         }
     }
 
@@ -1747,8 +2580,14 @@ public final class RelocViewModel: ObservableObject {
 
     private func startLocationRefreshCountdown() {
         refreshCountdownTask?.cancel()
+        postRefreshRecoveryTask?.cancel()
+        postRefreshRecoveryTask = nil
+        keepAlive.beginTransientBackgroundBridge(reason: "Reloc.LocationRefreshCountdown")
+        let baseCountdown = effectiveRefreshCountdownSeconds
+        let rawCountdown = locationRefreshRetryCount > 0 ? max(baseCountdown, 25) : baseCountdown
+        let countdownTotal = max(5, min(30, rawCountdown))
         refreshCountdownTask = Task { @MainActor [weak self] in
-            for remaining in stride(from: 7, through: 1, by: -1) {
+            for remaining in stride(from: countdownTotal, through: 1, by: -1) {
                 guard !Task.isCancelled, let self, self.isLocationRefreshGuideActive else { return }
                 LocationRefreshPresenter.shared.updateLocationRefresh(
                     step: 2,
@@ -1797,6 +2636,17 @@ public final class RelocViewModel: ObservableObject {
 
     // MARK: - Places Management
 
+    public var favoriteGroups: [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for fav in favorites {
+            if let grp = fav.group?.trimmingCharacters(in: .whitespacesAndNewlines), !grp.isEmpty, seen.insert(grp).inserted {
+                result.append(grp)
+            }
+        }
+        return result.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
     public func toggleFavoriteForInspected() {
         let loc = inspectedLocation
         if let idx = favorites.firstIndex(where: { abs($0.latitude - loc.latitude) < 1e-4 && abs($0.longitude - loc.longitude) < 1e-4 }) {
@@ -1817,7 +2667,26 @@ public final class RelocViewModel: ObservableObject {
         RelocAppShortcuts.updateAppShortcutParameters()
     }
 
-    public func saveCurrentAsFavorite(name: String) {
+    public func toggleFavorite(forRecent recent: RecentLocation) {
+        if let idx = favorites.firstIndex(where: { abs($0.latitude - recent.latitude) < 1e-4 && abs($0.longitude - recent.longitude) < 1e-4 }) {
+            favorites.remove(at: idx)
+        } else {
+            favorites.insert(
+                FavoriteLocation(
+                    name: recent.name,
+                    subtitle: recent.subtitle,
+                    latitude: recent.latitude,
+                    longitude: recent.longitude,
+                    altitude: recent.altitude
+                ),
+                at: 0
+            )
+        }
+        store.saveFavorites(favorites)
+        RelocAppShortcuts.updateAppShortcutParameters()
+    }
+
+    public func saveCurrentAsFavorite(name: String, group: String? = nil, note: String? = nil) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let loc = inspectedLocation
@@ -1825,11 +2694,46 @@ public final class RelocViewModel: ObservableObject {
             FavoriteLocation(
                 name: trimmed,
                 subtitle: selectedPlaceAddress,
+                group: group,
+                note: note,
                 latitude: loc.latitude,
                 longitude: loc.longitude,
                 altitude: loc.altitude
             ),
             at: 0
+        )
+        store.saveFavorites(favorites)
+        RelocAppShortcuts.updateAppShortcutParameters()
+    }
+
+    public func updateFavorite(
+        id: UUID,
+        name: String,
+        subtitle: String?,
+        group: String?,
+        note: String?,
+        latitude: Double,
+        longitude: Double,
+        altitude: Double
+    ) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              latitude.isFinite, longitude.isFinite, altitude.isFinite,
+              (-90.0...90.0).contains(latitude),
+              (-180.0...180.0).contains(longitude),
+              let idx = favorites.firstIndex(where: { $0.id == id }) else { return }
+        let cleanSubtitle = subtitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanGroup = group?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanNote = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        favorites[idx] = FavoriteLocation(
+            id: id,
+            name: trimmed,
+            subtitle: (cleanSubtitle?.isEmpty == false) ? cleanSubtitle : nil,
+            group: (cleanGroup?.isEmpty == false) ? cleanGroup : nil,
+            note: (cleanNote?.isEmpty == false) ? cleanNote : nil,
+            latitude: latitude,
+            longitude: longitude,
+            altitude: min(50_000.0, max(-500.0, altitude))
         )
         store.saveFavorites(favorites)
         RelocAppShortcuts.updateAppShortcutParameters()
@@ -1901,7 +2805,7 @@ public final class RelocViewModel: ObservableObject {
     }
 
     /// Tears down an active session cleanly without launching real-GPS recovery so a Shortcut
-    /// can immediately switch from a route session to a fixed favorite.
+    /// can immediately switch from a route/joystick session to a fixed favorite or another route.
     private func stopSessionForImmediateSwitch() async {
         guard snapshot.isRunning else { return }
         cancelTriggerTasks()
@@ -1909,8 +2813,12 @@ public final class RelocViewModel: ObservableObject {
         session = nil
         pendingBackgroundSnapshot = nil
         pendingBackgroundTrajectoryProgress = nil
+        pendingBackgroundJoystickProgress = nil
         isRouteSessionActive = false
         trajectoryProgress = nil
+        isJoystickSessionActive = false
+        joystickProgress = nil
+        joystickCruiseLocked = false
         activeSession?.stop()
         keepAlive.stop()
         coreLocation.setExternalFeedActive(false)
@@ -1936,7 +2844,7 @@ public final class RelocViewModel: ObservableObject {
         let displaySubtitle = (subtitle?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
             ?? String(format: "%.5f, %.5f", wgsLocation.latitude, wgsLocation.longitude)
 
-        if snapshot.isRunning && !isRouteSessionActive {
+        if snapshot.isRunning && !isRouteSessionActive && !isJoystickSessionActive {
             selectedPlaceName = displayName
             selectedPlaceAddress = displaySubtitle
             pendingLocation = wgsLocation
@@ -1959,7 +2867,46 @@ public final class RelocViewModel: ObservableObject {
         if resolveAltitude {
             resolveElevation(for: wgsLocation)
         }
+        pendingCameraFocus = activeMapCoordinate
         start(mode: .send)
+    }
+
+    /// Loads and starts a saved route by ID or name (used by App Intents and `reloc://route`).
+    @discardableResult
+    public func startSavedRouteFromShortcut(
+        routeID: String? = nil,
+        routeName: String? = nil,
+        speedOverrideMps: Double? = nil
+    ) async -> Bool {
+        let match: SavedRoute? = {
+            if let idStr = routeID, let uuid = UUID(uuidString: idStr),
+               let found = savedRoutes.first(where: { $0.id == uuid }) {
+                return found
+            }
+            if let name = routeName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+                if let exact = savedRoutes.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+                    return exact
+                }
+                if let partial = savedRoutes.first(where: { $0.name.localizedCaseInsensitiveContains(name) }) {
+                    return partial
+                }
+            }
+            return nil
+        }()
+        guard let route = match else { return false }
+
+        if snapshot.isRunning {
+            await stopSessionForImmediateSwitch()
+        }
+        loadSavedRoute(route)
+        if let overrideSpeed = speedOverrideMps, overrideSpeed.isFinite, overrideSpeed >= 0.3 {
+            routeSpeedMps = min(35.0, overrideSpeed)
+        }
+        if let first = routeMapWaypointCoordinates.first {
+            pendingCameraFocus = first
+        }
+        startRouteSession()
+        return isRouteSessionActive
     }
 
     /// Waits briefly until iAP2 MFi authentication finishes (or session errors/stops) before
@@ -1974,8 +2921,20 @@ public final class RelocViewModel: ObservableObject {
         }
     }
 
-    /// Handles basic `reloc://` URL commands (`reloc://favorite?name=...&refresh=1`, `reloc://stop`, `reloc://refresh`).
+    /// Handles incoming `.gpx` / `.json` backup files (from Files / AirDrop / "Open in Reloc") as well as
+    /// `reloc://` URL commands:
+    /// - `reloc://start?lat=...&lon=...&alt=...&name=...&gcj02=0|1&refresh=0|1`
+    /// - `reloc://route?id=...&name=...&speed=...&refresh=0|1`
+    /// - `reloc://favorite?id=...&name=...&refresh=0|1`
+    /// - `reloc://stop?refresh=0|1`
+    /// - `reloc://refresh`
     public func handleIncomingURL(_ url: URL) {
+        if url.isFileURL {
+            Task { @MainActor [weak self] in
+                self?.importDataFile(from: url)
+            }
+            return
+        }
         guard url.scheme?.lowercased() == "reloc" else { return }
         let action = (url.host ?? "").lowercased()
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -1992,11 +2951,62 @@ public final class RelocViewModel: ObservableObject {
                 if self.snapshot.isRunning {
                     self.stopAndRestore()
                 }
+                if param("refresh")?.lowercased() == "1" {
+                    self.launchOneTapRestoreRefresh()
+                }
             case "refresh":
                 if self.snapshot.isRunning {
                     self.launchOneTapLocationRefresh()
                 } else {
                     self.launchOneTapRestoreRefresh()
+                }
+            case "start":
+                guard let latStr = param("lat"), let lonStr = param("lon"),
+                      let rawLat = Double(latStr), let rawLon = Double(lonStr),
+                      rawLat.isFinite, rawLon.isFinite,
+                      (-90.0...90.0).contains(rawLat),
+                      (-180.0...180.0).contains(rawLon) else {
+                    self.alertMessage = L10n.tr("intent.error.invalid_coordinate")
+                    return
+                }
+                let isGCJ02 = (param("gcj02")?.lowercased() == "1" || param("gcj02")?.lowercased() == "true")
+                let wgs: CLLocationCoordinate2D = isGCJ02
+                    ? CoordinateTransform.gcj02ToWGS84(lat: rawLat, lon: rawLon)
+                    : CLLocationCoordinate2D(latitude: rawLat, longitude: rawLon)
+                let parsedAlt = param("alt").flatMap(Double.init).flatMap { $0.isFinite ? min(50_000.0, max(-500.0, $0)) : nil }
+                let loc = TargetLocation(
+                    latitude: wgs.latitude,
+                    longitude: wgs.longitude,
+                    altitude: parsedAlt ?? self.inspectedLocation.altitude
+                )
+                await self.startFixedLocationFromShortcut(
+                    wgsLocation: loc,
+                    name: param("name"),
+                    subtitle: nil,
+                    resolveAltitude: parsedAlt == nil
+                )
+                if autoRefresh {
+                    await self.waitForShortcutAuthReady(timeoutSeconds: 2.5)
+                    if self.snapshot.isRunning {
+                        self.launchOneTapLocationRefresh()
+                    }
+                }
+            case "route":
+                let speedOverride = param("speed").flatMap(Double.init)
+                let started = await self.startSavedRouteFromShortcut(
+                    routeID: param("id"),
+                    routeName: param("name"),
+                    speedOverrideMps: speedOverride
+                )
+                if !started {
+                    self.alertMessage = L10n.tr("intent.error.route_not_found")
+                    return
+                }
+                if autoRefresh {
+                    await self.waitForShortcutAuthReady(timeoutSeconds: 2.5)
+                    if self.snapshot.isRunning {
+                        self.launchOneTapLocationRefresh()
+                    }
                 }
             case "favorite":
                 let fav: FavoriteLocation? = {

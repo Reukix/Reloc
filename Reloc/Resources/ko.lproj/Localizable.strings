@@ -1,0 +1,429 @@
+/* 탭 및 공통 */
+"tab.location" = "위치";
+"tab.settings" = "설정";
+"tab.logs" = "진단 및 로그";
+"common.alert.title" = "알림";
+"common.ok" = "확인";
+"common.cancel" = "취소";
+"common.close" = "닫기";
+"common.save" = "저장";
+"common.apply" = "적용";
+"common.delete" = "삭제";
+"common.rename" = "이름 변경";
+"common.clear" = "비우기";
+"common.retry" = "재시도";
+"common.stop" = "중지";
+"common.restore" = "복원";
+"common.enable" = "설정 열기";
+
+/* 화면 테마, 지도 소스 및 스타일 */
+"appearance.system" = "시스템 설정 따름";
+"appearance.light" = "라이트";
+"appearance.dark" = "다크";
+
+"map.source.apple" = "Apple 지도 (시스템 기본)";
+"map.source.esri_street" = "글로벌 스트리트 (Esri · WGS-84)";
+"map.source.osm" = "OpenStreetMap (오픈 · WGS-84)";
+"map.source.esri_satellite" = "글로벌 위성 (Esri · WGS-84)";
+
+"map.source.apple.short" = "Apple 지도";
+"map.source.esri_street.short" = "글로벌 스트리트";
+"map.source.osm.short" = "OSM 지도";
+"map.source.esri_satellite.short" = "위성 지도";
+
+"map.style.standard" = "기본";
+"map.style.satellite" = "위성";
+"map.style.hybrid" = "하이브리드";
+
+/* 설정 */
+"settings.title" = "설정";
+"settings.section.location" = "위치 옵션";
+"settings.nmea_interval" = "NMEA 전송 간격 · %.1f초";
+"settings.duration" = "세션 유지 시간";
+"settings.duration.continuous" = "계속 실행";
+"settings.duration.seconds" = "%d초";
+"settings.duration.hours" = "%d시간";
+"settings.gcj02" = "중국 본토 GCJ-02 좌표 보정";
+"settings.micro_jitter" = "자연 미세 흔들림 (±0.6m GPS 드리프트)";
+"settings.dynamic_island.title" = "Dynamic Island 표시기";
+"settings.dynamic_island.on_hint" = "백그라운드 실행 시 Dynamic Island/상태 막대에 파란색 위치 표시";
+"settings.dynamic_island.off_ready" = "숨김 (무음 백그라운드 위치 유지 중)";
+"settings.dynamic_island.off_need_always" = "완전히 숨기려면 위치 권한을 '항상'으로 설정하세요";
+"settings.background_mode.title" = "백그라운드 유지 모드";
+"settings.background_mode.always" = "네이티브 위치 유지 준비됨 (오디오 미사용)";
+"settings.background_mode.upgrade_hint" = "장시간 화면 잠금 안정성을 위해 위치 권한을 '항상'으로 설정하세요";
+"settings.background_mode.action" = "설정";
+"settings.background_mode.footer" = "무음 오디오 재생 없이 순수 iOS 네이티브 백그라운드 위치 모드로만 동작하여 오디오 충돌과 배터리 소모를 줄입니다. 장시간 잠금 상태 유지 시 위치 권한을 '항상'으로 설정하는 것을 권장합니다.";
+"settings.section.appearance" = "지도 및 화면";
+"settings.appearance" = "화면 테마";
+"settings.language" = "앱 언어";
+"settings.language.system" = "시스템 설정 따름";
+"settings.map_source" = "지도 데이터 소스";
+"settings.apple_map_style" = "Apple 지도 스타일";
+"settings.appearance.footer" = "기본적으로 Apple 지도(MapKit)를 사용합니다. 순수 국제 WGS-84 타일이 필요하면 글로벌 스트리트, OpenStreetMap 또는 글로벌 위성 지도로 전환하세요.";
+"settings.section.shortcuts" = "단축어";
+"settings.shortcuts.start_summary" = "즐겨찾기 선택 → 가상 위치 시작 → 위치 서비스로 이동해 캐시 초기화";
+"settings.shortcuts.stop_summary" = "가상 위치 중지 → PiP 카운트다운 표시 및 위치 서비스로 이동해 실제 GPS 복원";
+"settings.shortcuts.open_app" = "Apple 단축어 열기";
+"settings.shortcuts.copy_prefs_title" = "위치 서비스 바로가기 URL 복사";
+"settings.shortcuts.copied" = "복사됨";
+"settings.shortcuts.footer" = "단축어 앱에서 Reloc을 검색하여 동작을 추가할 수 있습니다. 직접 URL 열기를 연결하려면 prefs:root=Privacy&path=LOCATION을 사용하세요.";
+
+/* 지도 선택 */
+"map.search.placeholder" = "장소 검색 또는 위도, 경도 입력";
+"map.search.clear" = "검색 지우기";
+"map.search.manual" = "좌표 직접 입력";
+"map.menu.source" = "지도 소스";
+"map.menu.style" = "Apple 지도 스타일";
+"map.menu.coordinates" = "좌표";
+"map.menu.manual_input" = "좌표 직접 입력";
+"map.pin.active" = "현재 위치";
+"map.pin.pending" = "변경 예정 위치";
+"map.unknown_place" = "알 수 없는 장소";
+"map.selected_place" = "선택된 위치";
+"map.geocoding" = "주소 확인 중…";
+"map.wgs84_coord" = "WGS-84 좌표";
+
+"map.status.confirmed" = "외장 GPS 활성 ✓";
+"map.status.pending_refresh" = "새로고침 필요 · ACK %d";
+"map.status.switching" = "GPS 잠금 중 · ACK %d";
+"map.status.auth_refresh" = "인증 완료 · 새로고침 필요";
+"map.status.auth_waking" = "인증 완료 · 구독 요청 중…";
+"map.status.connecting" = "위치 시작 중…";
+"map.status.idle" = "준비됨 · 지점을 선택하세요";
+
+"map.altitude.resolving" = "고도 조회 중…";
+"map.altitude.value" = "고도 %.1fm";
+
+"map.interrupted.title" = "이전 위치 세션이 중단됨";
+"map.interrupted.subtitle" = "마지막 위치 복원: %@";
+
+"map.stop_confirm.title" = "가상 위치를 중지하고 실제 위치로 복원할까요?";
+"map.stop_confirm.button" = "중지 및 복원";
+"map.stop_confirm.message" = "중지하면 iOS가 기기의 실제 GPS 위치로 전환합니다.";
+
+"map.permission.denied" = "위치 권한이 꺼져 있어 외장 GPS 구독을 시작할 수 없습니다.";
+"map.permission.reduced" = "'정확한 위치'가 꺼져 있어 외장 GPS가 잠기지 않거나 오차가 발생할 수 있습니다.";
+"map.restored.notice" = "기기의 실제 GPS 위치로 복원되었습니다";
+"map.last_error" = "마지막 오류: %@";
+
+"map.button.update_location" = "이 위치로 업데이트";
+"map.button.stop_restore" = "중지 및 복원";
+"map.button.start" = "위치 시작";
+
+"map.restore.banner.stale" = "외장 연결은 해제되었지만 iOS가 이전 위치를 캐시하고 있습니다(실내에서 흔함). 아래 버튼을 눌러 위치 서비스를 새로고침하면 즉시 실제 GPS로 복원됩니다.";
+"map.restore.banner.button" = "위치 서비스 원탭 새로고침 (실제 위치 복원)";
+"map.restore.banner.working" = "연결 해제 및 무효 NMEA 전송 완료. 실제 GPS 복원 중…";
+"map.restore.banner.refresh_now" = "지금 새로고침";
+
+"map.live.confirmed.title" = "외장 GPS가 100% 활성화됨";
+"map.live.confirmed.subtitle" = "시스템이 외장 소스(isProducedByAccessory = true)를 확인했습니다. 다른 앱으로 전환해도 됩니다.";
+"map.live.waiting_sub.detail" = "MFi 인증은 완료되었으나 시스템이 외장 GPS를 아직 구독하지 않았습니다. 아래 원탭 새로고침을 실행해 주세요.";
+"map.live.pending_lock.detail" = "NMEA 스트림이 연결되었으나 iOS가 기존 캐시 위치를 유지 중입니다. 아래 원탭 새로고침으로 강제 전환할 수 있습니다.";
+"map.live.pending_lock.distant_detail" = "목표가 실제 위치에서 15 km 이상 떨어져 iOS Wi-Fi/기지국 검증(CLNmeaScreener)에 의해 차단되었습니다. 아래 새로고침을 실행하세요. 에어플레인 모드 사용 시 '설정 → Wi-Fi'에서 Wi-Fi를 완전히 끄거나(제어 센터 해제는 스캔 유지) 프록시 규칙을 함께 사용하세요.";
+"map.live.refresh_button" = "위치 서비스 원탭 새로고침 (PiP 안내)";
+"map.live.connecting" = "로컬 가상 액세서리 채널 생성 및 MFi 인증 중…";
+"map.live.waking_sub" = "인증 완료. 시스템 외장 GPS 구독 활성화 중…";
+"map.live.injecting" = "고속 NMEA 좌표 주입 중, 시스템 잠금 대기 중…";
+"map.live.force_refresh" = "새로고침";
+
+"map.search.error.not_found" = "일치하는 장소를 찾을 수 없습니다. 다른 검색어를 입력해 보세요.";
+"map.search.error.throttled" = "검색 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.";
+"map.search.error.network" = "검색에 실패했습니다. 네트워크 연결을 확인해 주세요.";
+
+/* 즐겨찾기 및 경로 */
+"places.title" = "즐겨찾기 및 경로";
+"places.picker" = "분류";
+"places.tab.favorites" = "즐겨찾기 (%d)";
+"places.tab.routes" = "경로 (%d)";
+"places.tab.recents" = "최근 (%d)";
+"places.save_current.header" = "선택된 위치 저장";
+"places.name.placeholder" = "이름 입력";
+"places.favorites.header" = "저장된 장소";
+"places.favorites.empty" = "저장된 장소가 없습니다";
+"places.routes.save_current" = "현재 경로 저장";
+"places.routes.header" = "저장된 경로";
+"places.routes.empty" = "저장된 경로가 없습니다. 경로 모드에서 계획 후 북마크를 눌러 저장하세요.";
+"places.recents.header" = "최근 위치 (최대 30개)";
+"places.recents.empty" = "최근 기록이 없습니다";
+"places.rename.title" = "이름 변경";
+"places.rename.placeholder" = "새 이름";
+
+/* 모드 및 경로 시뮬레이션 */
+"mode.fixed" = "고정";
+"mode.route" = "경로";
+"route.creation.road" = "도로 경로";
+"route.creation.freehand" = "자유 그리기";
+"route.freehand.banner" = "한 손가락으로 지도에 경로를 그리세요 (시작점 근처에서 놓으면 자동 닫힘)";
+"route.freehand.start_draw" = "그리기";
+"route.freehand.redraw" = "다시 그리기";
+"route.freehand.stop_draw" = "그리기 종료";
+"route.freehand.drawing_title" = "자유 경로 그리는 중…";
+"route.freehand.drawing_subtitle" = "한 손가락으로 경로를 그리고 두 손가락으로 지도를 확대/이동하세요";
+"route.freehand.empty_title" = "자유 그리기 경로";
+"route.freehand.empty_subtitle" = "트랙 러닝이나 공원 순환 코스에 적합합니다. 그리기를 눌러 시작하세요";
+"route.freehand.ready_title" = "자유 경로 · %@";
+"route.freehand.ready_loop_title" = "순환 자유 경로 · %@";
+"route.freehand.ready_subtitle" = "%@ · 예상 %@";
+"route.search.placeholder" = "검색하여 출발지, 경유지 또는 목적지 추가";
+"route.preset.walking" = "도보";
+"route.preset.running" = "러닝";
+"route.preset.cycling" = "자전거";
+"route.preset.driving" = "운전";
+"route.loop.once" = "도착 후 정지";
+"route.loop.round_trip" = "왕복";
+"route.loop.closed" = "순환 반복";
+"route.realistic.short" = "자연 모션";
+"route.speed.label" = "이동 속도";
+"route.button.start" = "경로 시뮬레이션 시작";
+"route.button.pause" = "일시정지";
+"route.button.resume" = "재개";
+"route.pin.start" = "출발";
+"route.pin.end" = "도착";
+"route.pin.via" = "경유 %d";
+"route.planning.calculating" = "도로 경로 계산 중…";
+"route.planning.empty_title" = "도로 경로 시뮬레이션";
+"route.planning.empty_subtitle" = "지도를 탭하거나 검색하여 출발지와 목적지를 추가하세요";
+"route.planning.need_end_title" = "출발지 설정됨 · 지도를 탭해 목적지 추가";
+"route.planning.start_selected" = "출발: %@";
+"route.planning.ready_title" = "도로 경로 · %@";
+"route.planning.ready_subtitle" = "경유지 %d개 · 예상 %@";
+"route.notice.straight_fallback" = "이 지역은 도로 경로 데이터가 없어 직선 보간 경로로 대체했습니다";
+"route.notice.partial_fallback" = "일부 구간은 도로 데이터가 없어 직선으로 연결했습니다";
+"route.status.waiting_lock" = "출발지 GPS 잠금 대기 중…";
+"route.status.waiting_relock" = "시스템 잠금 해제됨 — 재잠금될 때까지 현재 위치 유지 중…";
+"route.status.moving" = "경로 이동 중";
+"route.status.moving_lap" = "경로 이동 중 · %d바퀴째";
+"route.status.paused" = "경로 일시정지됨 (현재 위치 고정)";
+"route.status.completed" = "목표 도착 (위치 유지 중)";
+"route.eta.done" = "도착";
+"route.save.title" = "경로 저장";
+"route.save.placeholder" = "경로 이름 입력";
+"route.save.message" = "현재 경로, 이동 모드, 속도 및 목표 설정을 저장합니다.";
+
+/* GPX 가져오기 및 내보내기 */
+"gpx.action.import" = "GPX 파일 가져오기";
+"gpx.action.import_short" = "GPX 가져오기";
+"gpx.action.export" = "GPX 파일 내보내기";
+"gpx.action.export_short" = "GPX";
+"gpx.error.unreadable" = "선택한 GPX 파일을 읽을 수 없습니다.";
+"gpx.error.too_large" = "GPX 파일 크기가 20 MB 제한을 초과했습니다.";
+"gpx.error.invalid_xml" = "잘못된 GPX XML 형식: %@";
+"gpx.error.no_coordinates" = "이 GPX 파일에서 유효한 좌표를 찾지 못했습니다.";
+"gpx.error.stop_session_first" = "새 GPX 파일을 가져오기 전에 현재 경로 시뮬레이션을 먼저 중지하세요.";
+
+/* 백업 및 마이그레이션 (JSON) */
+"settings.section.backup" = "백업 및 데이터 이동";
+"settings.backup.footer" = "모든 즐겨찾기와 저장된 경로를 JSON 백업으로 내보내 기기 이전이나 공유에 활용할 수 있습니다. 가져오기 시 중복 없이 안전하게 병합되며 GPX 파일도 바로 가져올 수 있습니다.";
+"backup.action.export" = "즐겨찾기 및 경로 내보내기 (JSON)";
+"backup.action.import" = "백업 가져오기 (JSON)";
+"backup.action.import_any" = "백업 또는 GPX 가져오기";
+"backup.export.summary" = "즐겨찾기 %d개 · 경로 %d개";
+"backup.import.subtitle" = "Reloc JSON 백업 및 표준 GPX 파일 지원";
+"backup.import.success" = "가져오기 완료: 즐겨찾기 %d개, 경로 %d개 추가됨.";
+"backup.import.success_with_updates" = "가져오기 완료: 즐겨찾기 %d개, 경로 %d개 추가됨 (%d개 업데이트됨).";
+"backup.error.unreadable" = "선택한 백업 파일을 읽을 수 없습니다.";
+"backup.error.too_large" = "백업 파일 크기가 20 MB 제한을 초과했습니다.";
+"backup.error.invalid_format" = "잘못된 백업 JSON 형식: %@";
+"backup.error.empty" = "이 백업 파일에 유효한 즐겨찾기 또는 경로 데이터가 없습니다.";
+"backup.error.nothing_to_export" = "내보낼 즐겨찾기나 저장된 경로가 아직 없습니다.";
+
+/* 기본 즐겨찾기 */
+"favorite.tokyo_station.name" = "도쿄역";
+"favorite.tokyo_station.subtitle" = "일본 도쿄도 치요다구";
+"favorite.taipei_101.name" = "타이베이 101";
+"favorite.taipei_101.subtitle" = "대만 타이베이시 신이구";
+
+/* 좌표 직접 입력 */
+"manual.title" = "좌표 직접 입력";
+"manual.section.header" = "좌표 및 고도";
+"manual.datum.label" = "좌표계";
+"manual.datum.wgs84" = "WGS-84 (글로벌 GPS)";
+"manual.datum.gcj02" = "GCJ-02 (중국 본토 지도)";
+"manual.lat.placeholder" = "위도 (-90 ~ 90)";
+"manual.lon.placeholder" = "경도 (-180 ~ 180)";
+"manual.alt.placeholder" = "고도 (m, 비워두면 자동 조회)";
+"manual.footer.invalid" = "유효한 위도(-90 ~ 90), 경도(-180 ~ 180) 및 고도(-500 ~ 50000 m)를 입력하세요.";
+"manual.footer.hint" = "표준 WGS-84 글로벌 GPS 좌표입니다. 고도를 비워두면 실제 지형 고도를 자동으로 조회합니다.";
+"manual.footer.gcj02_hint" = "중국 본토 GCJ-02 좌표를 표준 WGS-84로 자동 변환합니다. 한국 및 해외 좌표는 오차 없이 그대로 유지됩니다.";
+"manual.favorite.header" = "즐겨찾기에 저장 (선택)";
+"manual.favorite.placeholder" = "장소 이름";
+
+/* 프로토콜 로그 및 텔레메트리 */
+"logs.title" = "진단 및 프로토콜 로그";
+"logs.category.all" = "전체";
+"logs.category.nmea" = "NMEA";
+"logs.category.errors" = "오류";
+"logs.events_count" = "이벤트 %d건";
+"logs.empty.title" = "프로토콜 이벤트 없음";
+"logs.empty.subtitle" = "위치 세션을 시작하면 실시간 iAP2 핸드셰이크와 NMEA 스트림이 표시됩니다.";
+"logs.search.prompt" = "이벤트 필터 (예: FFFA / acknowledged)";
+"logs.telemetry.title" = "실시간 CoreLocation 진단";
+"logs.telemetry.monitoring" = "iOS가 보고하는 실시간 위치 소스 확인 중";
+"logs.telemetry.idle" = "iOS가 외장 GPS로 인식하는지 검증";
+"logs.telemetry.start" = "측정 시작";
+"logs.telemetry.coords" = "위도 / 경도";
+"logs.telemetry.acc_alt" = "정확도 / 고도";
+"logs.telemetry.simulated" = "소프트웨어 시뮬레이션";
+"logs.telemetry.accessory" = "외장 액세서리";
+"logs.telemetry.hint" = "오른쪽 상단의 '측정 시작'을 눌러 iOS sourceInformation 플래그를 실시간으로 확인하세요.";
+
+/* PiP 위치 새로고침 안내 */
+"pip.header" = "Reloc · 위치 새로고침";
+"pip.step_badge" = "단계 %d/3 · 실시간";
+"pip.preparing.headline" = "위치 새로고침 준비 중…";
+"pip.preparing.subtitle" = "플로팅 안내에 따라 위치 서비스를 껐다 켜주세요";
+"pip.step1.headline" = "① 시스템 '위치 서비스' 끄기";
+"pip.step1.subtitle" = "끄면 카운트다운이 자동으로 시작됩니다";
+"pip.step1.subtitle_seconds" = "끄면 %d초 카운트다운이 자동으로 시작됩니다";
+"pip.step1.distant_subtitle_seconds" = "끄면 %d초 대기; 장거리는 설정에서 Wi-Fi도 완전히 꺼주세요";
+"pip.step1.restore.subtitle" = "외장 캐시를 초기화하며 끄면 카운트다운이 자동 시작됩니다";
+"pip.step2.headline" = "② 시스템 위치 캐시 초기화 중";
+"pip.step2.restore.headline" = "② 외장 위치 캐시 초기화 중";
+"pip.step2.subtitle" = "카운트다운이 끝날 때까지 위치 서비스를 꺼두세요";
+"pip.step3.enable.headline" = "③ '위치 서비스' 다시 켜기";
+"pip.step3.enable.subtitle" = "켜면 Reloc이 외장 GPS를 자동으로 잠급니다";
+"pip.step3.restore.subtitle" = "켜면 기기의 실제 GPS로 즉시 전환됩니다";
+"pip.step3.reopened.headline" = "③ 위치 서비스가 다시 켜짐";
+"pip.step3.reopened.subtitle" = "외장 GPS 잠금 중, 1~2초 기다려 주세요…";
+"pip.step3.subscribed.headline" = "③ 외장 GPS 구독 완료";
+"pip.step3.subscribed.subtitle" = "목표 좌표 잠금 중, 1~2초 기다려 주세요…";
+"pip.step3.retry_longer.headline" = "아직 잠금 안 됨 · 다시 꺼주세요";
+"pip.step3.retry_longer.subtitle" = "위치 서비스를 다시 끄면 %d초 대기합니다 (설정에서 Wi-Fi도 끄기)";
+"pip.step3.restoring.headline" = "③ 실제 GPS 수신 중…";
+"pip.step3.restoring.subtitle" = "위치 서비스가 다시 켜졌습니다. 1~2초 기다려 주세요";
+"pip.countdown.seconds" = "%d초";
+"pip.countdown.now" = "지금 다시 켜세요!";
+"pip.finish.succeeded.headline" = "외장 GPS 활성화 완료";
+"pip.finish.succeeded.message" = "'%@' 잠금 완료. 다른 앱으로 이동해도 됩니다.";
+"pip.finish.restored.headline" = "실제 GPS 복원 완료";
+"pip.finish.restored.message" = "기기의 실제 GPS로 전환되었습니다.";
+"pip.finish.cancelled.headline" = "위치 새로고침 취소됨";
+"pip.finish.stopped.message" = "위치 세션이 중지되었습니다";
+
+/* 오류 */
+"error.mfi_unavailable" = "내장 액세서리 인증 구성 요소를 사용할 수 없습니다. 앱을 다시 설치해 주세요.";
+"error.virtual.no_framework" = "이 iOS 버전에서 CoreAccessories를 로드할 수 없습니다.";
+"error.virtual.no_client" = "이 iOS 버전에서 호환되는 ACCTransportClient를 찾지 못했습니다.";
+"error.virtual.incompatible_abi" = "호환되지 않는 가상 액세서리 인터페이스: %@";
+"error.virtual.socketpair" = "가상 액세서리 socketpair 실패: %s";
+"error.virtual.create_conn" = "시스템이 가상 액세서리 연결 생성을 거부했습니다. 프로토콜 로그를 확인하세요.";
+"error.virtual.create_endpoint" = "시스템이 iAP2 가상 엔드포인트 생성 또는 게시를 거부했습니다.";
+"error.virtual.no_detection" = "가상 엔드포인트가 iAP2 감지 응답을 반환하지 않았습니다.";
+
+/* App Intents 및 단축어 */
+"intent.error.permission_denied" = "Reloc에 위치 권한이 없습니다. 설정에서 위치 접근을 '항상'으로 허용해 주세요.";
+"intent.entity.favorite" = "저장된 장소";
+"intent.param.favorite" = "저장된 장소";
+"intent.param.auto_jump_settings" = "위치 서비스로 자동 이동";
+"intent.prompt.choose_favorite" = "어느 저장된 장소로 위치를 설정할까요?";
+
+"intent.start_favorite.title" = "가상 위치 시작";
+"intent.start_favorite.desc" = "즐겨찾기를 선택해 가상 GPS를 시작하고, 필요 시 PiP 안내를 띄워 iOS 위치 서비스로 이동합니다.";
+"intent.start_favorite.short" = "위치 시작";
+"Locate ${place} and refresh cache" = "${place} 위치 시작 및 캐시 새로고침";
+
+"intent.stop.title" = "가상 위치 중지";
+"intent.stop.desc" = "가상 액세서리 연결을 해제하고 필요 시 PiP 안내를 띄워 실제 GPS로 복원합니다.";
+"intent.stop.short" = "위치 중지";
+"Stop virtual location and refresh cache" = "가상 위치 중지 및 실제 위치 복원";
+
+/* 조이스틱 */
+"mode.joystick" = "조이스틱";
+"joystick.button.start" = "조이스틱 모드 시작";
+"joystick.cruise.lock" = "방향 고정";
+"joystick.cruise.locked" = "자동 이동 중";
+"joystick.cruise.unlock" = "고정 해제";
+"joystick.idle.title" = "조이스틱 · %@";
+"joystick.idle.subtitle" = "지도에서 시작 지점을 고른 뒤 360° 자유롭게 이동하세요";
+"joystick.speed.label" = "이동 속도";
+"joystick.status.waiting_lock" = "시작 지점 잠금 대기 중…";
+"joystick.status.cruising" = "조이스틱 자동 이동 중 (방향 고정)";
+"joystick.status.moving" = "조이스틱 이동 중";
+"joystick.status.ready" = "준비 완료 · 왼쪽 조이스틱을 드래그하세요";
+
+/* 경로 목표, 자연 정지 및 중간 출발 */
+"route.goal.none" = "무제한";
+"route.goal.distance" = "목표 거리";
+"route.goal.laps" = "목표 바퀴 수";
+"route.goal.title" = "자동 정지 목표 및 정차";
+"route.goal.mode.label" = "자동 정지 조건";
+"route.goal.section.header" = "자동 정지 조건";
+"route.goal.section.footer" = "목표 누적 거리 또는 바퀴 수에 도달하면 자동으로 정지하고 현재 위치를 유지합니다.";
+"route.goal.chip.none" = "목표: 없음";
+"route.goal.chip.distance" = "목표 %.1f km";
+"route.goal.chip.laps" = "목표 %d바퀴";
+"route.goal.distance.header" = "목표 누적 거리";
+"route.goal.distance.value" = "%.1f km 도달 시 자동 정지";
+"route.goal.laps.header" = "목표 바퀴 수";
+"route.goal.laps.value" = "%d바퀴 완료 시 자동 정지";
+"route.goal.laps.short" = "%d바퀴";
+"route.goal.laps.once_hint" = "바퀴 목표를 사용하려면 반복 모드를 '왕복' 또는 '순환 반복'으로 변경하세요.";
+"route.brief_stops.short" = "잠시 정지";
+"route.brief_stops.title" = "자연스러운 임시 정차 (신호등/휴식)";
+"route.brief_stops.subtitle" = "이동 중 간헐적으로 4~15초 멈춰 신호 대기나 휴식을 시뮬레이션합니다";
+"route.start_progress.label" = "출발 지점";
+"route.status.brief_stop" = "잠시 정차 중 (신호 / 휴식)…";
+"route.status.moving_lap_goal" = "경로 이동 중 · %d/%d바퀴";
+
+/* 장거리 경고 및 프록시 규칙 */
+"map.distant.warning" = "실제 위치에서 %@ 떨어짐 (>15 km): 긴 카운트다운 또는 프록시 규칙 사용을 권장합니다";
+"map.distant.rules_button" = "프록시 규칙";
+"settings.refresh_countdown.title" = "PiP 새로고침 카운트다운";
+"settings.refresh_countdown.auto" = "자동 (7s / 18s)";
+"settings.refresh_countdown.seconds" = "%d초";
+"route.action.reverse" = "경로 반전";
+"settings.proxy_rules.title" = "장거리 복귀 방지 프록시 규칙";
+"settings.proxy_rules.subtitle" = "Surge / Shadowrocket / Loon 안전 규칙";
+"settings.shortcuts.route_summary" = "저장된 경로를 선택해 경로 시뮬레이션을 바로 시작";
+"settings.shortcuts.coord_summary" = "사용자 지정 위도/경도(WGS-84 또는 GCJ-02)로 위치 주입";
+
+"proxy_rules.title" = "복귀 방지 프록시 규칙";
+"proxy_rules.intro.title" = "장거리 위치 잠금 안정화 (>15 km)";
+"proxy_rules.intro.body" = "Apple의 gs-loc Wi-Fi/기지국 검증 도메인만 차단하면 에어플레인 모드 없이도 장거리 위치가 원래 위치로 돌아가는 현상을 크게 줄일 수 있습니다.";
+"proxy_rules.format.header" = "규칙 형식";
+"proxy_rules.format.label" = "프록시 앱";
+"proxy_rules.copy" = "규칙 복사";
+"proxy_rules.copied" = "클립보드에 복사됨";
+"proxy_rules.export_file" = "모듈 / 플러그인 파일 내보내기";
+"proxy_rules.warning.footer" = "gs-loc.apple.com과 gs-loc-cn.apple.com만 차단합니다. ls.apple.com 전체를 차단하면 Apple 지도, 검색 및 경로 탐색이 작동하지 않으므로 피하세요.";
+
+/* 즐겨찾기 검색, 그룹 및 편집 */
+"places.search.placeholder" = "즐겨찾기, 그룹 또는 경로 검색";
+"places.search.empty" = "일치하는 항목이 없습니다";
+"places.group.all" = "전체";
+"places.group.ungrouped" = "미분류";
+"places.action.edit" = "편집";
+"places.edit.title" = "즐겨찾기 편집";
+"places.edit.section.basic" = "기본 정보 및 그룹";
+"places.edit.group.placeholder" = "그룹 태그 (선택: 직장 / 러닝 / 게임 등)";
+"places.edit.note.placeholder" = "메모 (선택)";
+"places.edit.address.placeholder" = "주소 / 부제목";
+"places.action.copy_coords" = "좌표 복사";
+"places.action.locate" = "이 위치 선택";
+"places.action.add_waypoint" = "경유지로 추가";
+"places.action.load_route" = "경로 불러오기";
+"places.action.add_favorite" = "즐겨찾기에 추가";
+"places.saved_badge" = "저장됨";
+"places.active_badge" = "현재";
+"places.gpx.import_subtitle" = "표준 GPX 1.0 / 1.1 트랙 및 웨이포인트 지원";
+
+/* 확장 단축어 */
+"intent.error.invalid_coordinate" = "잘못된 좌표입니다. 위도는 -90~90, 경도는 -180~180 범위여야 합니다.";
+"intent.error.route_not_found" = "저장된 경로를 찾지 못했습니다. 먼저 Reloc에서 경로를 저장하세요.";
+"intent.entity.route" = "저장된 경로";
+"intent.param.route" = "저장된 경로";
+"intent.param.show_refresh_guide" = "PiP 새로고침 안내 표시";
+"intent.param.latitude" = "위도";
+"intent.param.longitude" = "경도";
+"intent.param.altitude" = "고도 (m)";
+"intent.param.place_name" = "장소 이름";
+"intent.param.is_gcj02" = "GCJ-02 좌표로 입력";
+"intent.prompt.choose_route" = "시뮬레이션할 저장된 경로를 선택하세요";
+"intent.start_route.title" = "저장된 경로 시작";
+"intent.start_route.desc" = "저장된 경로를 불러와 시뮬레이션을 시작합니다(PiP 안내 및 설정 이동 선택 가능).";
+"intent.start_route.short" = "경로 시작";
+"Start route ${route}" = "${route} 경로 시작";
+"intent.start_coord.title" = "지정 좌표로 위치 시작";
+"intent.start_coord.desc" = "원하는 위도·경도(WGS-84 / GCJ-02 지원)로 가상 GPS를 시작합니다.";
+"Locate at (${latitude}, ${longitude})" = "좌표 (${latitude}, ${longitude})로 위치 설정";

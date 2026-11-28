@@ -1,0 +1,2 @@
+"NSLocationWhenInUseUsageDescription" = "定位注入期間用於保持 Reloc 在背景執行，並觸發系統定位服務訂閱。";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "定位注入期間用於保持 Reloc 在背景持續執行，避免系統暫停導致模擬定位中斷。";

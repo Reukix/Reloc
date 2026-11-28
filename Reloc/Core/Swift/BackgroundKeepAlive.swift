@@ -21,6 +21,7 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
     private var lastAuthStatus: CLAuthorizationStatus?
     private var lastRefreshToggleAt: TimeInterval = 0
     private var lastLocationCallbackAt: TimeInterval = 0
+    public private(set) var showsBackgroundIndicator: Bool = true
 
     public var onDiagnostic: ((String, [String: Any]) -> Void)?
     public var onLocationUpdate: ((CLLocation) -> Void)?
@@ -94,7 +95,7 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
         startBackgroundActivitySessionIfAvailable()
         locationManager.allowsBackgroundLocationUpdates = true
         locationManager.pausesLocationUpdatesAutomatically = false
-        locationManager.showsBackgroundLocationIndicator = true
+        locationManager.showsBackgroundLocationIndicator = showsBackgroundIndicator
         locationManager.desiredAccuracy = kCLLocationAccuracyBest
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             guard let self, self.isActive, self.locationSubscriptionActive else { return }
@@ -178,9 +179,43 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
         emitStatus("keepalive_refreshed")
     }
 
+    /// Enables or disables the system Dynamic Island / status bar background location indicator.
+    /// When disabled, avoids holding `CLBackgroundActivitySession` (which forces the blue pill on iOS 17+)
+    /// and sets `showsBackgroundLocationIndicator = false` (fully hidden when Always permission is granted).
+    public func setBackgroundIndicatorEnabled(_ enabled: Bool) {
+        guard showsBackgroundIndicator != enabled else { return }
+        showsBackgroundIndicator = enabled
+        guard isActive, locationSubscriptionActive else {
+            if !enabled {
+                locationManager.showsBackgroundLocationIndicator = false
+                invalidateBackgroundActivitySession()
+            }
+            return
+        }
+        locationManager.showsBackgroundLocationIndicator = enabled
+        if enabled {
+            startBackgroundActivitySessionIfAvailable()
+        } else {
+            invalidateBackgroundActivitySession()
+            let status = locationManager.authorizationStatus
+            if status == .authorizedAlways || status == .authorizedWhenInUse {
+                locationManager.allowsBackgroundLocationUpdates = true
+                locationManager.pausesLocationUpdatesAutomatically = false
+                locationManager.showsBackgroundLocationIndicator = false
+                locationManager.startUpdatingLocation()
+                isLocationUpdating = true
+            }
+        }
+        emitStatus("keepalive_indicator_updated")
+    }
+
     // MARK: - Background Location Keep-Alive
 
     private func startBackgroundActivitySessionIfAvailable() {
+        guard showsBackgroundIndicator else {
+            invalidateBackgroundActivitySession()
+            return
+        }
         if #available(iOS 17.0, *), backgroundActivitySession == nil {
             backgroundActivitySession = CLBackgroundActivitySession()
         }
@@ -218,7 +253,7 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
         locationManager.activityType = .otherNavigation
         locationManager.allowsBackgroundLocationUpdates = true
         locationManager.pausesLocationUpdatesAutomatically = false
-        locationManager.showsBackgroundLocationIndicator = true
+        locationManager.showsBackgroundLocationIndicator = showsBackgroundIndicator
         if !isLocationUpdating {
             locationManager.startUpdatingLocation()
             isLocationUpdating = true
@@ -239,6 +274,7 @@ public final class BackgroundKeepAlive: NSObject, CLLocationManagerDelegate {
             "auth": statusName,
             "accuracy": locationManager.accuracyAuthorization == .fullAccuracy ? "full" : "reduced",
             "mode": "location_only",
+            "indicator": showsBackgroundIndicator,
             "app_state": UIApplication.shared.applicationState == .background ? "background" : "foreground",
         ])
     }
