@@ -1,0 +1,4 @@
+/* Reloc Japanese localization - InfoPlist */
+"NSLocalNetworkUsageDescription" = "ローカルネットワーク経由でこのデバイスを検出し、ペアリングを行うために使用します（ループバックは外部プロキシ経由で提供されます）。";
+"NSLocationWhenInUseUsageDescription" = "位置情報の固定中に Reloc をバックグラウンドで動作させ、システムの位置情報サービスに反映させるために使用します。";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "位置情報の固定中に Reloc をバックグラウンドで継続動作させ、システムによる一時停止で位置情報が途切れるのを防ぐために使用します。";
